@@ -64,6 +64,10 @@ type Config struct {
 	// investor's wallet and withdrawn from it, and this package keeps no
 	// balance of its own.
 	Wallet *wallet.WalletService
+
+	// Payer is the company that pays the investors, printed on the yearly
+	// income report. Optional: left empty, the report prints a dash.
+	Payer Payer
 }
 
 // DefaultLocation is the timezone days are counted in when Config leaves

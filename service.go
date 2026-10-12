@@ -57,6 +57,8 @@ type InvestorService struct {
 	// wallets is arandu-wallet's service, where the invoices are deposited and
 	// withdrawn: the application's one instance, passed in Config.Wallet.
 	wallets *wallet.WalletService
+	// payer is who pays the investors, printed on the income report.
+	payer Payer
 }
 
 // location is the timezone days are counted in.

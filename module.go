@@ -18,6 +18,7 @@
 package investor
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -26,6 +27,7 @@ import (
 	stdhttp "net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/arandu-io/framework/data"
 	"github.com/arandu-io/framework/foundation"
@@ -88,6 +90,7 @@ func New(cfg Config, db *data.DB, sessions *security.SessionStore) (*Module, err
 	svc.files = cfg.Files
 	svc.loc = cfg.Location
 	svc.wallets = cfg.Wallet
+	svc.payer = cfg.Payer
 	return &Module{
 		cfg:      cfg,
 		svc:      svc,
@@ -142,6 +145,27 @@ func (m *Module) Routes(r *fhttp.Router) {
 	r.Action(stdhttp.MethodPost, admin+"/contracts/{id}/amendments", m.amendContract).Name("investor.admin.contracts.amend")
 	r.Action(stdhttp.MethodGet, m.cfg.Prefix+"/me/contracts", m.myContracts).Name("investor.me.contracts")
 	r.Action(stdhttp.MethodGet, m.cfg.Prefix+"/contracts/{id}/file", m.contractFile).Name("investor.contracts.file")
+
+	// The statement, the projection and the costs: the investor's panel, which
+	// the admin reads too.
+	r.Action(stdhttp.MethodGet, m.cfg.Prefix+"/contracts/{id}/statement", m.statement).Name("investor.contracts.statement")
+	r.Action(stdhttp.MethodGet, m.cfg.Prefix+"/contracts/{id}/projection", m.projection).Name("investor.contracts.projection")
+	r.Action(stdhttp.MethodGet, m.cfg.Prefix+"/costs", m.costs).Name("investor.costs.index")
+	r.Action(stdhttp.MethodGet, m.cfg.Prefix+"/me/invoices", m.myInvoices).Name("investor.me.invoices")
+	r.Action(stdhttp.MethodGet, m.cfg.Prefix+"/me/reports/{year}/{month}", m.myMonthlyReport).Name("investor.me.reports.monthly")
+	r.Action(stdhttp.MethodGet, m.cfg.Prefix+"/me/reports/{year}", m.myAnnualReport).Name("investor.me.reports.annual")
+
+	// The admin's books: entries by hand, costs, closings, and any investor's
+	// invoices and reports.
+	r.Action(stdhttp.MethodPost, admin+"/entries", m.storeEntry).Name("investor.admin.entries.store")
+	r.Action(stdhttp.MethodPost, admin+"/entries/{id}/reversal", m.reverseEntry).Name("investor.admin.entries.reverse")
+	r.Action(stdhttp.MethodPost, admin+"/costs", m.storeCost).Name("investor.admin.costs.store")
+	r.Action(stdhttp.MethodPost, admin+"/costs/{id}/end", m.endCost).Name("investor.admin.costs.end")
+	r.Action(stdhttp.MethodPost, admin+"/contracts/{id}/closings", m.closeContract).Name("investor.admin.closings.store")
+	r.Action(stdhttp.MethodPost, admin+"/closings/due", m.closeDue).Name("investor.admin.closings.due")
+	r.Action(stdhttp.MethodGet, admin+"/investors/{id}/invoices", m.invoices).Name("investor.admin.invoices.index")
+	r.Action(stdhttp.MethodGet, admin+"/investors/{id}/reports/{year}/{month}", m.monthlyReport).Name("investor.admin.reports.monthly")
+	r.Action(stdhttp.MethodGet, admin+"/investors/{id}/reports/{year}", m.annualReport).Name("investor.admin.reports.annual")
 }
 
 // adminSegment is where the admin's routes sit under the prefix. One prefix for
@@ -436,6 +460,236 @@ func (m *Module) contractFile(ctx *fhttp.Context) error {
 	ctx.Response.WriteHeader(stdhttp.StatusOK)
 	_, err = io.Copy(ctx.Response, file.Body)
 	return err
+}
+
+// statement answers a contract's statement, filtered by ?from=&to=&kind=&product=.
+func (m *Module) statement(ctx *fhttp.Context) error {
+	from, errFrom := ParseDay(ctx.Query("from"))
+	to, errTo := ParseDay(ctx.Query("to"))
+	if errFrom != nil || errTo != nil {
+		return validation.Errors{"period": {"from and to must be days in the form " + DayLayout}}
+	}
+	who, _ := ctx.User()
+	st, err := m.svc.StatementOf(ctx.Ctx(), who, ctx.Param("id"), StatementFilter{
+		From: from, To: to, Kind: EntryKind(ctx.Query("kind")), ProductID: ctx.Query("product"),
+	})
+	if err != nil {
+		return err
+	}
+	return ctx.JSON(stdhttp.StatusOK, statementResource{st})
+}
+
+// projection answers a contract's open period.
+func (m *Module) projection(ctx *fhttp.Context) error {
+	who, _ := ctx.User()
+	p, err := m.svc.ProjectionOf(ctx.Ctx(), who, ctx.Param("id"))
+	if err != nil {
+		return err
+	}
+	return ctx.JSON(stdhttp.StatusOK, projectionResource{p})
+}
+
+// costs answers the declared costs.
+func (m *Module) costs(ctx *fhttp.Context) error {
+	who, _ := ctx.User()
+	views, err := m.svc.Costs(ctx.Ctx(), who)
+	if err != nil {
+		return err
+	}
+	return ctx.JSON(stdhttp.StatusOK, costsResource(views))
+}
+
+// myInvoices answers the invoices of the investor who is asking.
+func (m *Module) myInvoices(ctx *fhttp.Context) error {
+	who, _ := ctx.User()
+	me, err := m.svc.Mine(ctx.Ctx(), who)
+	if err != nil {
+		return err
+	}
+	list, err := m.svc.Invoices(ctx.Ctx(), who, me.ID)
+	if err != nil {
+		return err
+	}
+	return ctx.JSON(stdhttp.StatusOK, invoicesResource(list))
+}
+
+// invoices answers one investor's invoices, for the admin.
+func (m *Module) invoices(ctx *fhttp.Context) error {
+	who, _ := ctx.User()
+	list, err := m.svc.Invoices(ctx.Ctx(), who, ctx.Param("id"))
+	if err != nil {
+		return err
+	}
+	return ctx.JSON(stdhttp.StatusOK, invoicesResource(list))
+}
+
+// spreadsheet streams an .xlsx the report writes.
+func spreadsheet(ctx *fhttp.Context, name string, write func(io.Writer) error) error {
+	var body bytes.Buffer
+	if err := write(&body); err != nil {
+		return err
+	}
+	header := ctx.Response.Header()
+	header.Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	header.Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": name}))
+	header.Set("Cache-Control", "private, no-store")
+	ctx.Response.WriteHeader(stdhttp.StatusOK)
+	_, err := ctx.Response.Write(body.Bytes())
+	return err
+}
+
+func yearMonth(ctx *fhttp.Context) (int, int) {
+	year, _ := strconv.Atoi(ctx.Param("year"))
+	month, _ := strconv.Atoi(ctx.Param("month"))
+	return year, month
+}
+
+// myMonthlyReport streams the asking investor's report of a month.
+func (m *Module) myMonthlyReport(ctx *fhttp.Context) error {
+	who, _ := ctx.User()
+	me, err := m.svc.Mine(ctx.Ctx(), who)
+	if err != nil {
+		return err
+	}
+	year, month := yearMonth(ctx)
+	return spreadsheet(ctx, fmt.Sprintf("relatorio-%04d-%02d.xlsx", year, month), func(w io.Writer) error {
+		return m.svc.MonthlyReport(ctx.Ctx(), who, me.ID, year, month, w)
+	})
+}
+
+// myAnnualReport streams the asking investor's income report of a year.
+func (m *Module) myAnnualReport(ctx *fhttp.Context) error {
+	who, _ := ctx.User()
+	me, err := m.svc.Mine(ctx.Ctx(), who)
+	if err != nil {
+		return err
+	}
+	year, _ := yearMonth(ctx)
+	return spreadsheet(ctx, fmt.Sprintf("informe-de-rendimentos-%04d.xlsx", year), func(w io.Writer) error {
+		return m.svc.AnnualReport(ctx.Ctx(), who, me.ID, year, w)
+	})
+}
+
+// monthlyReport streams one investor's report of a month, for the admin.
+func (m *Module) monthlyReport(ctx *fhttp.Context) error {
+	who, _ := ctx.User()
+	year, month := yearMonth(ctx)
+	return spreadsheet(ctx, fmt.Sprintf("relatorio-%04d-%02d.xlsx", year, month), func(w io.Writer) error {
+		return m.svc.MonthlyReport(ctx.Ctx(), who, ctx.Param("id"), year, month, w)
+	})
+}
+
+// annualReport streams one investor's income report of a year, for the admin.
+func (m *Module) annualReport(ctx *fhttp.Context) error {
+	who, _ := ctx.User()
+	year, _ := yearMonth(ctx)
+	return spreadsheet(ctx, fmt.Sprintf("informe-de-rendimentos-%04d.xlsx", year), func(w io.Writer) error {
+		return m.svc.AnnualReport(ctx.Ctx(), who, ctx.Param("id"), year, w)
+	})
+}
+
+// centavos reads an amount in centavos from a field.
+func centavos(ctx *fhttp.Context, field string) int64 {
+	v, _ := strconv.ParseInt(strings.TrimSpace(ctx.Input(field)), 10, 64)
+	return v
+}
+
+// storeEntry records an entry typed by the admin.
+func (m *Module) storeEntry(ctx *fhttp.Context) error {
+	at, err := time.Parse(time.RFC3339, ctx.Input("occurred_at"))
+	if err != nil {
+		return validation.Errors{"occurred_at": {"must be a date and time in RFC 3339"}}
+	}
+	who, _ := ctx.User()
+	e, err := m.svc.RecordManualEntry(ctx.Ctx(), who, EntryRequest{
+		ExternalRef: ctx.Input("external_ref"), Kind: EntryKind(ctx.Input("kind")),
+		ProductID: ctx.Input("product_id"), OccurredAt: at,
+		Gross: centavos(ctx, "gross"), Fee: centavos(ctx, "fee"),
+		FeeDetail: ctx.Input("fee_detail"), Description: ctx.Input("description"),
+	})
+	if err != nil {
+		return err
+	}
+	return ctx.JSON(stdhttp.StatusCreated, entryResource{*e})
+}
+
+// reverseEntry undoes an entry.
+func (m *Module) reverseEntry(ctx *fhttp.Context) error {
+	who, _ := ctx.User()
+	e, err := m.svc.ReverseEntry(ctx.Ctx(), who, ctx.Param("id"), ctx.Input("reason"))
+	if err != nil {
+		return err
+	}
+	return ctx.JSON(stdhttp.StatusCreated, entryResource{*e})
+}
+
+// storeCost declares a cost.
+func (m *Module) storeCost(ctx *fhttp.Context) error {
+	if err := ctx.Request.ParseForm(); err != nil {
+		return validation.Errors{"form": {"could not be read"}}
+	}
+	who, _ := ctx.User()
+	c, err := m.svc.CreateCost(ctx.Ctx(), who, CostRequest{
+		Name: ctx.Input("name"), Category: ctx.Input("category"), Amount: centavos(ctx, "amount"),
+		Recurrence: Recurrence(ctx.Input("recurrence")), StartsOn: ctx.Input("starts_on"),
+		EndsOn: ctx.Input("ends_on"), AllProducts: ctx.Input("all_products") == "1" || ctx.Input("all_products") == "true",
+		Products: ctx.Request.PostForm["products"],
+	})
+	if err != nil {
+		return err
+	}
+	return ctx.JSON(stdhttp.StatusCreated, costsResource([]CostView{{Item: *c}}))
+}
+
+// endCost ends a cost on the day given.
+func (m *Module) endCost(ctx *fhttp.Context) error {
+	who, _ := ctx.User()
+	c, err := m.svc.EndCost(ctx.Ctx(), who, ctx.Param("id"), ctx.Input("ends_on"))
+	if err != nil {
+		return err
+	}
+	return ctx.JSON(stdhttp.StatusOK, costsResource([]CostView{{Item: *c}}))
+}
+
+// closeContract closes one contract's period up to ?as_of (today when absent).
+func (m *Module) closeContract(ctx *fhttp.Context) error {
+	asOf, err := m.asOf(ctx)
+	if err != nil {
+		return err
+	}
+	who, _ := ctx.User()
+	inv, err := m.svc.Close(ctx.Ctx(), who, ctx.Param("id"), asOf)
+	if err != nil {
+		return err
+	}
+	return ctx.JSON(stdhttp.StatusCreated, invoicesResource([]*Invoice{inv}))
+}
+
+// closeDue closes every contract due on the day.
+func (m *Module) closeDue(ctx *fhttp.Context) error {
+	asOf, err := m.asOf(ctx)
+	if err != nil {
+		return err
+	}
+	who, _ := ctx.User()
+	closed, failed, err := m.svc.CloseDue(ctx.Ctx(), who, asOf)
+	if err != nil {
+		return err
+	}
+	return ctx.JSON(stdhttp.StatusOK, closingsResource{closed: closed, failed: failed})
+}
+
+// asOf is the day a closing runs as of: the input's, or today in the
+// application's timezone.
+func (m *Module) asOf(ctx *fhttp.Context) (Day, error) {
+	if raw := ctx.Input("as_of"); raw != "" {
+		d, err := ParseDay(raw)
+		if err != nil {
+			return "", validation.Errors{"as_of": {"must be a day in the form " + DayLayout}}
+		}
+		return d, nil
+	}
+	return DayOf(time.Now(), m.cfg.Location), nil
 }
 
 // Migrations declares the schema this module owns.

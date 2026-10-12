@@ -153,6 +153,21 @@ var everyRoute = []struct {
 	{http.MethodPost, investor.DefaultPrefix + "/admin/contracts/record-1/amendments", multipartContract, false},
 	{http.MethodGet, investor.DefaultPrefix + "/me/contracts", "", true},
 	{http.MethodGet, investor.DefaultPrefix + "/contracts/record-1/file", "", true},
+	{http.MethodGet, investor.DefaultPrefix + "/contracts/record-1/statement", "", true},
+	{http.MethodGet, investor.DefaultPrefix + "/contracts/record-1/projection", "", true},
+	{http.MethodGet, investor.DefaultPrefix + "/costs", "", true},
+	{http.MethodGet, investor.DefaultPrefix + "/me/invoices", "", true},
+	{http.MethodGet, investor.DefaultPrefix + "/me/reports/2026/10", "", true},
+	{http.MethodGet, investor.DefaultPrefix + "/me/reports/2026", "", true},
+	{http.MethodPost, investor.DefaultPrefix + "/admin/entries", "external_ref=o-1&kind=sale&product_id=loccrm&occurred_at=2026-10-05T12%3A00%3A00-03%3A00&gross=19900&fee=798", false},
+	{http.MethodPost, investor.DefaultPrefix + "/admin/entries/record-1/reversal", "", false},
+	{http.MethodPost, investor.DefaultPrefix + "/admin/costs", "name=Servidor&category=infra&amount=60000&recurrence=monthly&starts_on=2026-01-01&all_products=1", false},
+	{http.MethodPost, investor.DefaultPrefix + "/admin/costs/record-1/end", "ends_on=2026-12-31", false},
+	{http.MethodPost, investor.DefaultPrefix + "/admin/contracts/record-1/closings", "as_of=2026-10-20", false},
+	{http.MethodPost, investor.DefaultPrefix + "/admin/closings/due", "as_of=2026-10-20", false},
+	{http.MethodGet, investor.DefaultPrefix + "/admin/investors/record-1/invoices", "", true},
+	{http.MethodGet, investor.DefaultPrefix + "/admin/investors/record-1/reports/2026/10", "", true},
+	{http.MethodGet, investor.DefaultPrefix + "/admin/investors/record-1/reports/2026", "", true},
 }
 
 // validPersonForm is a registration every check passes, so a refusal of it is
@@ -263,15 +278,31 @@ func TestTheModuleRegistersItsRoutesUnderItsPrefix(t *testing.T) {
 		"GET /widgets/admin/investors",
 		"GET /widgets/admin/investors/{id}",
 		"GET /widgets/admin/investors/{id}/contracts",
+		"GET /widgets/admin/investors/{id}/invoices",
+		"GET /widgets/admin/investors/{id}/reports/{year}",
+		"GET /widgets/admin/investors/{id}/reports/{year}/{month}",
 		"GET /widgets/contracts/{id}/file",
+		"GET /widgets/contracts/{id}/projection",
+		"GET /widgets/contracts/{id}/statement",
+		"GET /widgets/costs",
 		"GET /widgets/me",
 		"GET /widgets/me/contracts",
+		"GET /widgets/me/invoices",
+		"GET /widgets/me/reports/{year}",
+		"GET /widgets/me/reports/{year}/{month}",
+		"POST /widgets/admin/closings/due",
 		"POST /widgets/admin/contracts/{id}/amendments",
+		"POST /widgets/admin/contracts/{id}/closings",
+		"POST /widgets/admin/costs",
+		"POST /widgets/admin/costs/{id}/end",
+		"POST /widgets/admin/entries",
+		"POST /widgets/admin/entries/{id}/reversal",
 		"POST /widgets/admin/investors",
 		"POST /widgets/admin/investors/{id}/contracts",
 		"POST /widgets/admin/investors/{id}/suspension",
 		"PUT /widgets/admin/investors/{id}",
 	}
+
 	if len(got) != len(want) || len(got) != len(everyRoute) {
 		t.Fatalf("registered %v, want %v, and everyRoute reaches %d of them", got, want, len(everyRoute))
 	}
