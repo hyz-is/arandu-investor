@@ -52,7 +52,7 @@ func install(t *testing.T) world {
 	})
 	db := data.Wrap(handle, data.DialectSQLite)
 	sessions := security.NewSessionStore([]byte(appKey), time.Hour, false, security.NewMemoryBackend())
-	walletModule, err := wallet.New(wallet.Config{Tenant: tenant}, db, sessions)
+	walletModule, err := wallet.New(wallet.Config{Tenant: tenant, Receipts: testDisk(t)}, db, sessions)
 	if err != nil {
 		t.Fatalf("building arandu-wallet: %v", err)
 	}

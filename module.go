@@ -152,6 +152,7 @@ func (m *Module) Routes(r *fhttp.Router) {
 	r.Action(stdhttp.MethodGet, m.cfg.Prefix+"/contracts/{id}/projection", m.projection).Name("investor.contracts.projection")
 	r.Action(stdhttp.MethodGet, m.cfg.Prefix+"/costs", m.costs).Name("investor.costs.index")
 	r.Action(stdhttp.MethodGet, m.cfg.Prefix+"/me/invoices", m.myInvoices).Name("investor.me.invoices")
+	r.Action(stdhttp.MethodPost, m.cfg.Prefix+"/invoices/{id}/withdrawal", m.withdrawInvoice).Name("investor.invoices.withdraw")
 	r.Action(stdhttp.MethodGet, m.cfg.Prefix+"/me/reports/{year}/{month}", m.myMonthlyReport).Name("investor.me.reports.monthly")
 	r.Action(stdhttp.MethodGet, m.cfg.Prefix+"/me/reports/{year}", m.myAnnualReport).Name("investor.me.reports.annual")
 
@@ -506,21 +507,32 @@ func (m *Module) myInvoices(ctx *fhttp.Context) error {
 	if err != nil {
 		return err
 	}
-	list, err := m.svc.Invoices(ctx.Ctx(), who, me.ID)
+	list, err := m.svc.InvoiceViews(ctx.Ctx(), who, me.ID)
 	if err != nil {
 		return err
 	}
-	return ctx.JSON(stdhttp.StatusOK, invoicesResource(list))
+	return ctx.JSON(stdhttp.StatusOK, invoiceViewsResource(list))
+}
+
+// withdrawInvoice asks for one invoice to be paid out, whole, to the account
+// given.
+func (m *Module) withdrawInvoice(ctx *fhttp.Context) error {
+	who, _ := ctx.User()
+	view, err := m.svc.WithdrawInvoice(ctx.Ctx(), who, ctx.Param("id"), ctx.Input("account_id"))
+	if err != nil {
+		return err
+	}
+	return ctx.JSON(stdhttp.StatusCreated, invoiceViewsResource([]InvoiceView{*view}))
 }
 
 // invoices answers one investor's invoices, for the admin.
 func (m *Module) invoices(ctx *fhttp.Context) error {
 	who, _ := ctx.User()
-	list, err := m.svc.Invoices(ctx.Ctx(), who, ctx.Param("id"))
+	list, err := m.svc.InvoiceViews(ctx.Ctx(), who, ctx.Param("id"))
 	if err != nil {
 		return err
 	}
-	return ctx.JSON(stdhttp.StatusOK, invoicesResource(list))
+	return ctx.JSON(stdhttp.StatusOK, invoiceViewsResource(list))
 }
 
 // spreadsheet streams an .xlsx the report writes.
@@ -968,6 +980,8 @@ func (createInvoices) Up(ctx context.Context, conn migrations.Connection) error 
 		table.BigInteger("amount")
 		table.String("status", maxShortLen)
 		table.String("wallet_operation_id", maxIdentifierLen).Default("")
+		table.String("withdrawal_request_id", maxIdentifierLen).Default("")
+		table.UnsignedSmallInteger("withdrawal_attempts").Default(0)
 		table.String("closed_by", maxIdentifierLen)
 		table.Timestamp("closed_at")
 		table.Timestamp("created_at")

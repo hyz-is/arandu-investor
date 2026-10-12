@@ -210,6 +210,12 @@ type Invoice struct {
 	// wallet. Empty when there was nothing to deposit.
 	WalletOperationID string `db:"wallet_operation_id"`
 
+	// WithdrawalRequestID is the latest arandu-wallet withdrawal request made
+	// for this invoice, and WithdrawalAttempts how many were made: a rejected
+	// or cancelled one leaves the invoice to be asked for again.
+	WithdrawalRequestID string `db:"withdrawal_request_id"`
+	WithdrawalAttempts  int    `db:"withdrawal_attempts"`
+
 	ClosedBy  string    `db:"closed_by"`
 	ClosedAt  time.Time `db:"closed_at"`
 	CreatedAt time.Time `db:"created_at"`

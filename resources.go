@@ -150,3 +150,24 @@ func (r closingsResource) ToArray() map[string]any {
 	return map[string]any{"closed": closed, "failed_contract_ids": failed}
 }
 func (r closingsResource) With() map[string]any { return nil }
+
+type invoiceViewsResource []InvoiceView
+
+func (r invoiceViewsResource) ToArray() map[string]any {
+	items := make([]map[string]any, 0, len(r))
+	for _, v := range r {
+		inv := v.Invoice
+		row := invoiceFields(&inv)
+		row["withdrawable"] = v.Withdrawable()
+		row["withdrawal"] = nil
+		if w := v.Withdrawal; w != nil {
+			row["withdrawal"] = map[string]any{
+				"id": w.ID, "status": string(w.Status), "rejected_reason": w.RejectedReason,
+				"end_to_end_id": w.EndToEndID, "has_receipt": w.ReceiptKey != "",
+			}
+		}
+		items = append(items, row)
+	}
+	return map[string]any{"items": items}
+}
+func (r invoiceViewsResource) With() map[string]any { return nil }

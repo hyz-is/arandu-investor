@@ -157,6 +157,7 @@ var everyRoute = []struct {
 	{http.MethodGet, investor.DefaultPrefix + "/contracts/record-1/projection", "", true},
 	{http.MethodGet, investor.DefaultPrefix + "/costs", "", true},
 	{http.MethodGet, investor.DefaultPrefix + "/me/invoices", "", true},
+	{http.MethodPost, investor.DefaultPrefix + "/invoices/record-1/withdrawal", "account_id=acc-1", true},
 	{http.MethodGet, investor.DefaultPrefix + "/me/reports/2026/10", "", true},
 	{http.MethodGet, investor.DefaultPrefix + "/me/reports/2026", "", true},
 	{http.MethodPost, investor.DefaultPrefix + "/admin/entries", "external_ref=o-1&kind=sale&product_id=loccrm&occurred_at=2026-10-05T12%3A00%3A00-03%3A00&gross=19900&fee=798", false},
@@ -300,6 +301,7 @@ func TestTheModuleRegistersItsRoutesUnderItsPrefix(t *testing.T) {
 		"POST /widgets/admin/investors",
 		"POST /widgets/admin/investors/{id}/contracts",
 		"POST /widgets/admin/investors/{id}/suspension",
+		"POST /widgets/invoices/{id}/withdrawal",
 		"PUT /widgets/admin/investors/{id}",
 	}
 

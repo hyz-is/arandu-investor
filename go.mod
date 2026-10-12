@@ -7,7 +7,7 @@ require (
 	github.com/arandu-io/hesape v0.54.0
 	github.com/arandu-io/hesape/database/connectors/sqlite v0.11.0
 	github.com/hyz-is/arandu-br v0.2.0
-	github.com/hyz-is/arandu-wallet v0.11.0
+	github.com/hyz-is/arandu-wallet v0.12.0
 )
 
 require (

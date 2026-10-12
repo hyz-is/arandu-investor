@@ -324,6 +324,9 @@ func (s *InvestorService) deposit(ctx context.Context, actor security.Subject, o
 			Description:   "Faturas do Investidor Anjo",
 			Currency:      "BRL",
 			DecimalPlaces: 2,
+			// The money leaves only through a withdrawal request an operator
+			// pays, never through the investor's own hand on the ledger.
+			PayoutByRequest: true,
 		})
 	}
 	if err != nil {
