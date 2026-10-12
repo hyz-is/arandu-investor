@@ -20,6 +20,7 @@ import (
 	"github.com/arandu-io/hesape/filesystem"
 
 	investor "github.com/hyz-is/arandu-investor"
+	wallet "github.com/hyz-is/arandu-wallet"
 )
 
 // These tests drive the module the way an application does: build it, register
@@ -61,7 +62,11 @@ func mount(t *testing.T, cfg investor.Config) mounted {
 	if cfg.Files == nil {
 		cfg.Files = testDisk(t)
 	}
-	module, err := investor.New(cfg, data.Wrap(nil, data.DialectSQLite), sessions)
+	handle := data.Wrap(nil, data.DialectSQLite)
+	if cfg.Wallet == nil {
+		cfg.Wallet = testWallet(t, handle)
+	}
+	module, err := investor.New(cfg, handle, sessions)
 	if err != nil {
 		t.Fatalf("building the module: %v", err)
 	}
@@ -314,12 +319,15 @@ func TestNewRefusesAWiringThatCannotWork(t *testing.T) {
 
 	sessions := security.NewSessionStore([]byte(appKey), time.Hour, false, security.NewMemoryBackend())
 	handle := data.Wrap(nil, data.DialectSQLite)
-	valid := investor.Config{Files: testDisk(t)}
+	valid := investor.Config{Files: testDisk(t), Wallet: testWallet(t, handle)}
 
-	if _, err := investor.New(investor.Config{}, handle, sessions); err == nil {
+	if _, err := investor.New(investor.Config{Wallet: valid.Wallet}, handle, sessions); err == nil {
 		t.Error("a configuration with no Disk for the contracts was accepted")
 	}
-	if _, err := investor.New(investor.Config{PageSize: -1, Files: testDisk(t)}, handle, sessions); err == nil {
+	if _, err := investor.New(investor.Config{Files: valid.Files}, handle, sessions); err == nil {
+		t.Error("a configuration with no arandu-wallet was accepted")
+	}
+	if _, err := investor.New(investor.Config{PageSize: -1, Files: valid.Files, Wallet: valid.Wallet}, handle, sessions); err == nil {
 		t.Error("a configuration with a negative page size was accepted")
 	}
 	if _, err := investor.New(valid, nil, sessions); err == nil {
@@ -340,7 +348,7 @@ func TestNewRefusesARoutePrefixThatCannotBeRegistered(t *testing.T) {
 	handle := data.Wrap(nil, data.DialectSQLite)
 
 	for _, prefix := range []string{"/widgets{", "/widgets/{id}"} {
-		if _, err := investor.New(investor.Config{Prefix: prefix, Files: testDisk(t)}, handle, sessions); err == nil {
+		if _, err := investor.New(investor.Config{Prefix: prefix, Files: testDisk(t), Wallet: testWallet(t, handle)}, handle, sessions); err == nil {
 			t.Errorf("New accepted route prefix %q, which would panic during route registration", prefix)
 		}
 	}
@@ -350,7 +358,8 @@ func TestTheModuleDeclaresItsSchema(t *testing.T) {
 	t.Parallel()
 
 	sessions := security.NewSessionStore([]byte(appKey), time.Hour, false, security.NewMemoryBackend())
-	module, err := investor.New(investor.Config{Files: testDisk(t)}, data.Wrap(nil, data.DialectSQLite), sessions)
+	handle := data.Wrap(nil, data.DialectSQLite)
+	module, err := investor.New(investor.Config{Files: testDisk(t), Wallet: testWallet(t, handle)}, handle, sessions)
 	if err != nil {
 		t.Fatalf("building the module: %v", err)
 	}
@@ -412,4 +421,16 @@ func contractUpload() (string, string) {
 	_, _ = part.Write([]byte("%PDF-1.4 signed"))
 	_ = w.Close()
 	return body.String(), w.FormDataContentType()
+}
+
+// testWallet is arandu-wallet over the same handle, the one instance an
+// application passes in Config.Wallet.
+func testWallet(t testing.TB, db *data.DB) *wallet.WalletService {
+	t.Helper()
+	sessions := security.NewSessionStore([]byte("0123456789abcdef0123456789abcdef"), time.Hour, false, security.NewMemoryBackend())
+	module, err := wallet.New(wallet.Config{Tenant: "acme"}, db, sessions)
+	if err != nil {
+		t.Fatalf("building arandu-wallet: %v", err)
+	}
+	return module.Service()
 }

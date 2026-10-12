@@ -86,6 +86,8 @@ func New(cfg Config, db *data.DB, sessions *security.SessionStore) (*Module, err
 	cfg = cfg.withDefaults()
 	svc := NewInvestorService(db)
 	svc.files = cfg.Files
+	svc.loc = cfg.Location
+	svc.wallets = cfg.Wallet
 	return &Module{
 		cfg:      cfg,
 		svc:      svc,
@@ -441,7 +443,11 @@ func (m *Module) contractFile(ctx *fhttp.Context) error {
 // They are returned in the order their names sort in, which is the order they
 // apply in: the name carries the order, and nothing else decides it.
 func (m *Module) Migrations() []foundation.Migration {
-	return []foundation.Migration{createInvestors{}, createContracts{}, createContractProducts{}}
+	return []foundation.Migration{
+		createInvestors{}, createContracts{}, createContractProducts{},
+		createEntries{}, createCostItems{}, createCostItemProducts{},
+		createInvoices{}, createInvoiceEntries{},
+	}
 }
 
 // The migration is reversible, and the assertion is here rather than discovered
@@ -577,4 +583,178 @@ func (createContractProducts) Up(ctx context.Context, conn migrations.Connection
 // Down drops the table.
 func (createContractProducts) Down(ctx context.Context, conn migrations.Connection) error {
 	return conn.Schema().DropIfExists(ctx, contractProductsTable)
+}
+
+var (
+	_ migrations.ReversibleMigration = createEntries{}
+	_ migrations.ReversibleMigration = createCostItems{}
+	_ migrations.ReversibleMigration = createCostItemProducts{}
+	_ migrations.ReversibleMigration = createInvoices{}
+	_ migrations.ReversibleMigration = createInvoiceEntries{}
+)
+
+// createEntries is the table of the application's money movements.
+type createEntries struct{ migrations.BaseMigration }
+
+// GetName is the migration's identity, and it carries the order.
+func (createEntries) GetName() string { return "20261012_0004_create_investor_entries" }
+
+// Up creates the table. Money is BIGINT centavos, never a decimal or a float.
+func (createEntries) Up(ctx context.Context, conn migrations.Connection) error {
+	return conn.Schema().Create(ctx, entriesTable, func(table *schema.Blueprint) {
+		table.String("id", maxIdentifierLen).Primary()
+		table.String("tenant_id", maxIdentifierLen)
+		table.String("product_id", maxIdentifierLen)
+		table.String("kind", maxShortLen)
+		table.Timestamp("occurred_at")
+		table.String("occurred_on", len(DayLayout))
+		table.BigInteger("gross")
+		table.BigInteger("fee")
+		table.BigInteger("net")
+		table.String("fee_detail", maxShortLen).Default("")
+		table.String("description", maxTextLen).Default("")
+		table.String("source", maxShortLen)
+		table.String("external_ref", maxNameLen)
+		table.String("reverses_id", maxIdentifierLen).Default("")
+		table.String("created_by", maxIdentifierLen)
+		table.Timestamp("created_at")
+		table.Timestamp("updated_at")
+
+		// The idempotency of RecordEntry: one entry per event per tenant.
+		table.Unique([]string{"tenant_id", "external_ref"}, "investor_entries_ref_uq")
+		table.Index([]string{"tenant_id", "occurred_on", "product_id"}, "investor_entries_day_idx")
+	})
+}
+
+// Down drops the table.
+func (createEntries) Down(ctx context.Context, conn migrations.Connection) error {
+	return conn.Schema().DropIfExists(ctx, entriesTable)
+}
+
+// createCostItems is the table of declared costs.
+type createCostItems struct{ migrations.BaseMigration }
+
+// GetName is the migration's identity, and it carries the order.
+func (createCostItems) GetName() string { return "20261012_0005_create_investor_cost_items" }
+
+// Up creates the table.
+func (createCostItems) Up(ctx context.Context, conn migrations.Connection) error {
+	return conn.Schema().Create(ctx, costItemsTable, func(table *schema.Blueprint) {
+		table.String("id", maxIdentifierLen).Primary()
+		table.String("tenant_id", maxIdentifierLen)
+		table.String("name", maxNameLen)
+		table.String("category", maxShortLen)
+		table.BigInteger("amount")
+		table.String("recurrence", maxShortLen)
+		table.String("starts_on", len(DayLayout))
+		table.String("ends_on", len(DayLayout)).Default("")
+		table.UnsignedSmallInteger("all_products").Default(0)
+		table.String("created_by", maxIdentifierLen)
+		table.Timestamp("created_at")
+		table.Timestamp("updated_at")
+
+		table.Index([]string{"tenant_id", "starts_on"}, "investor_cost_items_start_idx")
+	})
+}
+
+// Down drops the table.
+func (createCostItems) Down(ctx context.Context, conn migrations.Connection) error {
+	return conn.Schema().DropIfExists(ctx, costItemsTable)
+}
+
+// createCostItemProducts is the table of products a scoped cost is borne by.
+type createCostItemProducts struct{ migrations.BaseMigration }
+
+// GetName is the migration's identity, and it carries the order.
+func (createCostItemProducts) GetName() string {
+	return "20261012_0006_create_investor_cost_item_products"
+}
+
+// Up creates the table.
+func (createCostItemProducts) Up(ctx context.Context, conn migrations.Connection) error {
+	return conn.Schema().Create(ctx, costItemProductsTable, func(table *schema.Blueprint) {
+		table.String("id", maxIdentifierLen).Primary()
+		table.String("tenant_id", maxIdentifierLen)
+		table.String("cost_item_id", maxIdentifierLen)
+		table.String("product_id", maxIdentifierLen)
+		table.Timestamp("created_at")
+		table.Timestamp("updated_at")
+
+		table.Unique([]string{"tenant_id", "cost_item_id", "product_id"}, "investor_cost_item_products_uq")
+	})
+}
+
+// Down drops the table.
+func (createCostItemProducts) Down(ctx context.Context, conn migrations.Connection) error {
+	return conn.Schema().DropIfExists(ctx, costItemProductsTable)
+}
+
+// createInvoices is the table of closings.
+type createInvoices struct{ migrations.BaseMigration }
+
+// GetName is the migration's identity, and it carries the order.
+func (createInvoices) GetName() string { return "20261012_0007_create_investor_invoices" }
+
+// Up creates the table.
+func (createInvoices) Up(ctx context.Context, conn migrations.Connection) error {
+	return conn.Schema().Create(ctx, invoicesTable, func(table *schema.Blueprint) {
+		table.String("id", maxIdentifierLen).Primary()
+		table.String("tenant_id", maxIdentifierLen)
+		table.String("investor_id", maxIdentifierLen)
+		table.String("contract_id", maxIdentifierLen)
+		table.String("root_id", maxIdentifierLen)
+		table.String("period_start", len(DayLayout))
+		table.String("period_end", len(DayLayout))
+		table.BigInteger("gross")
+		table.BigInteger("fees")
+		table.BigInteger("costs")
+		table.BigInteger("net")
+		table.BigInteger("cost_ratio_ppm")
+		table.BigInteger("share_bps")
+		table.BigInteger("amount")
+		table.String("status", maxShortLen)
+		table.String("wallet_operation_id", maxIdentifierLen).Default("")
+		table.String("closed_by", maxIdentifierLen)
+		table.Timestamp("closed_at")
+		table.Timestamp("created_at")
+		table.Timestamp("updated_at")
+
+		// One invoice per contract and period: closing twice, or two admins
+		// closing at once, makes one.
+		table.Unique([]string{"tenant_id", "root_id", "period_end"}, "investor_invoices_period_uq")
+		table.Index([]string{"tenant_id", "investor_id", "period_end"}, "investor_invoices_investor_idx")
+	})
+}
+
+// Down drops the table.
+func (createInvoices) Down(ctx context.Context, conn migrations.Connection) error {
+	return conn.Schema().DropIfExists(ctx, invoicesTable)
+}
+
+// createInvoiceEntries is the table of which entries each invoice counted.
+type createInvoiceEntries struct{ migrations.BaseMigration }
+
+// GetName is the migration's identity, and it carries the order.
+func (createInvoiceEntries) GetName() string { return "20261012_0008_create_investor_invoice_entries" }
+
+// Up creates the table. An entry is counted once per contract, ever: the
+// unique index is what keeps a late entry from being counted twice.
+func (createInvoiceEntries) Up(ctx context.Context, conn migrations.Connection) error {
+	return conn.Schema().Create(ctx, invoiceEntriesTable, func(table *schema.Blueprint) {
+		table.String("id", maxIdentifierLen).Primary()
+		table.String("tenant_id", maxIdentifierLen)
+		table.String("invoice_id", maxIdentifierLen)
+		table.String("root_id", maxIdentifierLen)
+		table.String("entry_id", maxIdentifierLen)
+		table.Timestamp("created_at")
+		table.Timestamp("updated_at")
+
+		table.Unique([]string{"tenant_id", "root_id", "entry_id"}, "investor_invoice_entries_uq")
+		table.Index([]string{"tenant_id", "invoice_id"}, "investor_invoice_entries_invoice_idx")
+	})
+}
+
+// Down drops the table.
+func (createInvoiceEntries) Down(ctx context.Context, conn migrations.Connection) error {
+	return conn.Schema().DropIfExists(ctx, invoiceEntriesTable)
 }

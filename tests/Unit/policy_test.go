@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/arandu-io/framework/data"
 	"github.com/arandu-io/framework/security"
@@ -14,6 +15,7 @@ import (
 	"github.com/arandu-io/hesape/filesystem"
 
 	investor "github.com/hyz-is/arandu-investor"
+	wallet "github.com/hyz-is/arandu-wallet"
 )
 
 // The four properties this package exists to keep are checked here, and they
@@ -393,23 +395,24 @@ func TestTheRequestValidatesItsInput(t *testing.T) {
 func TestTheConfigurationRefusesWhatCannotWork(t *testing.T) {
 	t.Parallel()
 
-	disk := testDisk(t)
+	disk, wallets := testDisk(t), testWallet(t, nilHandle())
 	for name, cfg := range map[string]investor.Config{
-		"no Disk for the contracts": {},
-		"relative prefix":           {Prefix: "investor", Files: disk},
-		"page size too big":         {PageSize: investor.MaxPageSize + 1, Files: disk},
-		"negative page size":        {PageSize: -1, Files: disk},
+		"no Disk for the contracts": {Wallet: wallets},
+		"no arandu-wallet":          {Files: disk},
+		"relative prefix":           {Prefix: "investor", Files: disk, Wallet: wallets},
+		"page size too big":         {PageSize: investor.MaxPageSize + 1, Files: disk, Wallet: wallets},
+		"negative page size":        {PageSize: -1, Files: disk, Wallet: wallets},
 	} {
 		if err := cfg.Validate(); err == nil {
 			t.Errorf("the configuration with %s was accepted", name)
 		}
 	}
 
-	// The Disk is the one setting an application has to write. Everything else
+	// The Disk and the wallet are the settings an application has to write. Everything else
 	// has a default, and there is no tenant to name: every tenant comes from the
 	// Grant.
-	if err := (investor.Config{Files: disk}).Validate(); err != nil {
-		t.Fatalf("a configuration with only the Disk was refused: %v", err)
+	if err := (investor.Config{Files: disk, Wallet: wallets}).Validate(); err != nil {
+		t.Fatalf("a configuration with only the Disk and the wallet was refused: %v", err)
 	}
 }
 
@@ -421,4 +424,16 @@ func testDisk(t testing.TB) *filesystem.Disk {
 		t.Fatalf("building a local Disk: %v", err)
 	}
 	return filesystem.NewDisk("contracts", adapter)
+}
+
+// testWallet is arandu-wallet over the same handle, the one instance an
+// application passes in Config.Wallet.
+func testWallet(t testing.TB, db *data.DB) *wallet.WalletService {
+	t.Helper()
+	sessions := security.NewSessionStore([]byte("0123456789abcdef0123456789abcdef"), time.Hour, false, security.NewMemoryBackend())
+	module, err := wallet.New(wallet.Config{Tenant: "acme"}, db, sessions)
+	if err != nil {
+		t.Fatalf("building arandu-wallet: %v", err)
+	}
+	return module.Service()
 }

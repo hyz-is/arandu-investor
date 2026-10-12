@@ -10,6 +10,7 @@ import (
 	"github.com/arandu-io/framework/security"
 	"github.com/arandu-io/framework/validation"
 	"github.com/arandu-io/hesape/filesystem"
+	wallet "github.com/hyz-is/arandu-wallet"
 )
 
 // Pagination bounds for List. A request that asks for everything gets the
@@ -50,6 +51,20 @@ type InvestorService struct {
 	// passed in Config.Files, reached with the Grant so the tenant prefixes
 	// every key.
 	files *filesystem.Disk
+	// loc is the application's timezone: the calendar an instant is turned into
+	// a day in, which is what the periods count by.
+	loc *time.Location
+	// wallets is arandu-wallet's service, where the invoices are deposited and
+	// withdrawn: the application's one instance, passed in Config.Wallet.
+	wallets *wallet.WalletService
+}
+
+// location is the timezone days are counted in.
+func (s *InvestorService) location() *time.Location {
+	if s.loc == nil {
+		return time.UTC
+	}
+	return s.loc
 }
 
 // NewInvestorService wires the service over the application's database handle.

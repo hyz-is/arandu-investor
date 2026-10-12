@@ -3,8 +3,10 @@ package investor
 import (
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/arandu-io/hesape/filesystem"
+	wallet "github.com/hyz-is/arandu-wallet"
 )
 
 // The defaults for the optional settings. They are constants rather than
@@ -50,7 +52,24 @@ type Config struct {
 	// prefix. Required: a contract without its signed copy is the one thing
 	// this package exists to keep.
 	Files *filesystem.Disk
+
+	// Location is the timezone an instant becomes a calendar day in, which is
+	// what a period counts by: a sale at 22:00 in Sao Paulo on the 19th is a
+	// sale of the 19th, though it is already the 20th in UTC. Nil means
+	// DefaultLocation.
+	Location *time.Location
+
+	// Wallet is arandu-wallet's service, the application's one instance
+	// (walletModule.Service()). Required: an invoice is deposited in the
+	// investor's wallet and withdrawn from it, and this package keeps no
+	// balance of its own.
+	Wallet *wallet.WalletService
 }
+
+// DefaultLocation is the timezone days are counted in when Config leaves
+// Location nil. The package is Brazilian first; an application elsewhere sets
+// its own.
+const DefaultLocation = "America/Sao_Paulo"
 
 // Validate reports what the configuration cannot be used with.
 //
@@ -67,6 +86,9 @@ func (c Config) Validate() error {
 	}
 	if c.Files == nil {
 		return fmt.Errorf("investor: Config.Files is nil: the signed contracts need a Disk, the application's own (filesystem.NewDisk), passed in here")
+	}
+	if c.Wallet == nil {
+		return fmt.Errorf("investor: Config.Wallet is nil: arandu-investor needs arandu-wallet installed and registered in bootstrap/app.go; pass walletModule.Service() here")
 	}
 	if c.PageSize < 0 || c.PageSize > MaxPageSize {
 		return fmt.Errorf("investor: Config.PageSize is %d, and has to be between 0 and %d, where 0 means %d", c.PageSize, MaxPageSize, DefaultPageSize)
@@ -105,6 +127,13 @@ func (c Config) withDefaults() Config {
 	}
 	if c.PageSize == 0 {
 		c.PageSize = DefaultPageSize
+	}
+	if c.Location == nil {
+		if loc, err := time.LoadLocation(DefaultLocation); err == nil {
+			c.Location = loc
+		} else {
+			c.Location = time.FixedZone("BRT", -3*60*60)
+		}
 	}
 	return c
 }

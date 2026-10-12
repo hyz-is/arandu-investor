@@ -179,6 +179,13 @@ func TestEveryServiceMethodAuthorizesBeforeTheModel(t *testing.T) {
 	}
 }
 
+// generatedQueries are the constructors aru model:build writes, one per entity.
+// Each is a way into the Model, so constructing any of them counts as reaching it.
+var generatedQueries = map[string]bool{
+	"Investors": true, "Contracts": true, "ContractProducts": true, "Entries": true,
+	"CostItems": true, "CostItemProducts": true, "Invoices": true, "InvoiceEntries": true,
+}
+
 // firstModelReach is where a Service first constructs the generated query or
 // calls a promoted write terminal. Investors itself counts: moving only its
 // construction before Authorize is the mutation this audit exists to reject.
@@ -193,7 +200,7 @@ func firstModelReach(body *ast.BlockStmt) token.Pos {
 			return true
 		}
 		name := calledName(call)
-		if name != "Investors" && !terminals[name] {
+		if !generatedQueries[name] && !terminals[name] {
 			return true
 		}
 		if found == token.NoPos || call.Pos() < found {

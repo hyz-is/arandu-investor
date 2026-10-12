@@ -13,6 +13,7 @@ import (
 	sqliteconnector "github.com/arandu-io/hesape/database/connectors/sqlite"
 
 	investor "github.com/hyz-is/arandu-investor"
+	wallet "github.com/hyz-is/arandu-wallet"
 )
 
 // dsn opens a database file the way the tests need it: the write lock taken
@@ -26,9 +27,10 @@ const tenant = "acme"
 
 // world is one application with this package installed over a real database.
 type world struct {
-	db     *data.DB
-	module *investor.Module
-	svc    *investor.InvestorService
+	db      *data.DB
+	module  *investor.Module
+	svc     *investor.InvestorService
+	wallets *wallet.WalletService
 }
 
 // install opens a fresh SQLite database, applies the package's migrations and
@@ -50,22 +52,27 @@ func install(t *testing.T) world {
 	})
 	db := data.Wrap(handle, data.DialectSQLite)
 	sessions := security.NewSessionStore([]byte(appKey), time.Hour, false, security.NewMemoryBackend())
-	module, err := investor.New(investor.Config{Files: testDisk(t)}, db, sessions)
+	walletModule, err := wallet.New(wallet.Config{Tenant: tenant}, db, sessions)
+	if err != nil {
+		t.Fatalf("building arandu-wallet: %v", err)
+	}
+	module, err := investor.New(investor.Config{Files: testDisk(t), Wallet: walletModule.Service()}, db, sessions)
 	if err != nil {
 		t.Fatalf("building the module: %v", err)
 	}
 	migrations := hedatabase.ForMigrations(connection)
-	for _, migration := range module.Migrations() {
+	for _, migration := range append(walletModule.Migrations(), module.Migrations()...) {
 		if err := migration.Up(context.Background(), migrations); err != nil {
 			t.Fatalf("applying %s: %v", migration.GetName(), err)
 		}
 	}
-	return world{db: db, module: module, svc: module.Service()}
+	return world{db: db, module: module, svc: module.Service(), wallets: walletModule.Service()}
 }
 
-// admin is the finance team of the tenant.
+// admin is the finance team of the tenant: this package's admin, and
+// arandu-wallet's operator, because closing a period deposits money.
 func admin() security.Subject {
-	return security.Subject{ID: "finance-1", Tenant: tenant, Roles: []string{investor.AdminRole}, Verified: true}
+	return security.Subject{ID: "finance-1", Tenant: tenant, Roles: []string{investor.AdminRole, wallet.OperatorRole}, Verified: true}
 }
 
 // user is a signed-in person of the tenant with no role of this package.
