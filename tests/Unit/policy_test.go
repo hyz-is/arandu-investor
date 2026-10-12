@@ -11,6 +11,7 @@ import (
 	"github.com/arandu-io/framework/security"
 	"github.com/arandu-io/hesape/database/model"
 	"github.com/arandu-io/hesape/database/query"
+	"github.com/arandu-io/hesape/filesystem"
 
 	investor "github.com/hyz-is/arandu-investor"
 )
@@ -392,20 +393,32 @@ func TestTheRequestValidatesItsInput(t *testing.T) {
 func TestTheConfigurationRefusesWhatCannotWork(t *testing.T) {
 	t.Parallel()
 
+	disk := testDisk(t)
 	for name, cfg := range map[string]investor.Config{
-		"relative prefix":    {Prefix: "investor"},
-		"page size too big":  {PageSize: investor.MaxPageSize + 1},
-		"negative page size": {PageSize: -1},
+		"no Disk for the contracts": {},
+		"relative prefix":           {Prefix: "investor", Files: disk},
+		"page size too big":         {PageSize: investor.MaxPageSize + 1, Files: disk},
+		"negative page size":        {PageSize: -1, Files: disk},
 	} {
 		if err := cfg.Validate(); err == nil {
 			t.Errorf("the configuration with %s was accepted", name)
 		}
 	}
 
-	// The zero value is the configuration an application that changes nothing
-	// writes, and it has to be one New accepts: there is no tenant to name,
-	// because every tenant comes from the Grant.
-	if err := (investor.Config{}).Validate(); err != nil {
-		t.Fatalf("the zero configuration was refused: %v", err)
+	// The Disk is the one setting an application has to write. Everything else
+	// has a default, and there is no tenant to name: every tenant comes from the
+	// Grant.
+	if err := (investor.Config{Files: disk}).Validate(); err != nil {
+		t.Fatalf("a configuration with only the Disk was refused: %v", err)
 	}
+}
+
+// testDisk is a Disk over a fresh directory, the application's Disk in small.
+func testDisk(t testing.TB) *filesystem.Disk {
+	t.Helper()
+	adapter, err := filesystem.NewLocalFilesystemAdapter(t.TempDir())
+	if err != nil {
+		t.Fatalf("building a local Disk: %v", err)
+	}
+	return filesystem.NewDisk("contracts", adapter)
 }

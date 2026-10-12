@@ -1,9 +1,12 @@
 package feature_test
 
 import (
+	"bytes"
 	"context"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/textproto"
 	"sort"
 	"strings"
 	"testing"
@@ -14,6 +17,7 @@ import (
 	"github.com/arandu-io/framework/http/middleware"
 	"github.com/arandu-io/framework/security"
 	"github.com/arandu-io/hesape/database/migrations"
+	"github.com/arandu-io/hesape/filesystem"
 
 	investor "github.com/hyz-is/arandu-investor"
 )
@@ -54,6 +58,9 @@ func mount(t *testing.T, cfg investor.Config) mounted {
 	sessions := security.NewSessionStore([]byte(appKey), time.Hour, false, security.NewMemoryBackend())
 	flash := security.NewFlash([]byte(appKey), false)
 
+	if cfg.Files == nil {
+		cfg.Files = testDisk(t)
+	}
 	module, err := investor.New(cfg, data.Wrap(nil, data.DialectSQLite), sessions)
 	if err != nil {
 		t.Fatalf("building the module: %v", err)
@@ -95,9 +102,13 @@ func (m mounted) signIn(t *testing.T, subject security.Subject) []*http.Cookie {
 func (m mounted) answer(t *testing.T, method, target, body string, cookies ...*http.Cookie) (rec *httptest.ResponseRecorder) {
 	t.Helper()
 
+	contentType := "application/x-www-form-urlencoded"
+	if body == multipartContract {
+		body, contentType = contractUpload()
+	}
 	req := httptest.NewRequest(method, target, strings.NewReader(body))
 	if body != "" {
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Content-Type", contentType)
 	}
 	for _, cookie := range cookies {
 		req.AddCookie(cookie)
@@ -132,6 +143,11 @@ var everyRoute = []struct {
 	{http.MethodPut, investor.DefaultPrefix + "/admin/investors/record-1", "name=Ana&email=ana%40example.com", false},
 	{http.MethodPost, investor.DefaultPrefix + "/admin/investors/record-1/suspension", "", false},
 	{http.MethodDelete, investor.DefaultPrefix + "/admin/investors/record-1/suspension", "", false},
+	{http.MethodGet, investor.DefaultPrefix + "/admin/investors/record-1/contracts", "", true},
+	{http.MethodPost, investor.DefaultPrefix + "/admin/investors/record-1/contracts", multipartContract, false},
+	{http.MethodPost, investor.DefaultPrefix + "/admin/contracts/record-1/amendments", multipartContract, false},
+	{http.MethodGet, investor.DefaultPrefix + "/me/contracts", "", true},
+	{http.MethodGet, investor.DefaultPrefix + "/contracts/record-1/file", "", true},
 }
 
 // validPersonForm is a registration every check passes, so a refusal of it is
@@ -241,8 +257,13 @@ func TestTheModuleRegistersItsRoutesUnderItsPrefix(t *testing.T) {
 		"DELETE /widgets/admin/investors/{id}/suspension",
 		"GET /widgets/admin/investors",
 		"GET /widgets/admin/investors/{id}",
+		"GET /widgets/admin/investors/{id}/contracts",
+		"GET /widgets/contracts/{id}/file",
 		"GET /widgets/me",
+		"GET /widgets/me/contracts",
+		"POST /widgets/admin/contracts/{id}/amendments",
 		"POST /widgets/admin/investors",
+		"POST /widgets/admin/investors/{id}/contracts",
 		"POST /widgets/admin/investors/{id}/suspension",
 		"PUT /widgets/admin/investors/{id}",
 	}
@@ -293,9 +314,12 @@ func TestNewRefusesAWiringThatCannotWork(t *testing.T) {
 
 	sessions := security.NewSessionStore([]byte(appKey), time.Hour, false, security.NewMemoryBackend())
 	handle := data.Wrap(nil, data.DialectSQLite)
-	valid := investor.Config{}
+	valid := investor.Config{Files: testDisk(t)}
 
-	if _, err := investor.New(investor.Config{PageSize: -1}, handle, sessions); err == nil {
+	if _, err := investor.New(investor.Config{}, handle, sessions); err == nil {
+		t.Error("a configuration with no Disk for the contracts was accepted")
+	}
+	if _, err := investor.New(investor.Config{PageSize: -1, Files: testDisk(t)}, handle, sessions); err == nil {
 		t.Error("a configuration with a negative page size was accepted")
 	}
 	if _, err := investor.New(valid, nil, sessions); err == nil {
@@ -316,7 +340,7 @@ func TestNewRefusesARoutePrefixThatCannotBeRegistered(t *testing.T) {
 	handle := data.Wrap(nil, data.DialectSQLite)
 
 	for _, prefix := range []string{"/widgets{", "/widgets/{id}"} {
-		if _, err := investor.New(investor.Config{Prefix: prefix}, handle, sessions); err == nil {
+		if _, err := investor.New(investor.Config{Prefix: prefix, Files: testDisk(t)}, handle, sessions); err == nil {
 			t.Errorf("New accepted route prefix %q, which would panic during route registration", prefix)
 		}
 	}
@@ -326,7 +350,7 @@ func TestTheModuleDeclaresItsSchema(t *testing.T) {
 	t.Parallel()
 
 	sessions := security.NewSessionStore([]byte(appKey), time.Hour, false, security.NewMemoryBackend())
-	module, err := investor.New(investor.Config{}, data.Wrap(nil, data.DialectSQLite), sessions)
+	module, err := investor.New(investor.Config{Files: testDisk(t)}, data.Wrap(nil, data.DialectSQLite), sessions)
 	if err != nil {
 		t.Fatalf("building the module: %v", err)
 	}
@@ -355,4 +379,37 @@ func TestTheModuleDeclaresItsSchema(t *testing.T) {
 	if !sort.StringsAreSorted(names) {
 		t.Fatalf("the migrations are not returned in the order their names sort in: %v", names)
 	}
+}
+
+// testDisk is a Disk over a fresh directory, the application's Disk in small.
+func testDisk(t testing.TB) *filesystem.Disk {
+	t.Helper()
+	adapter, err := filesystem.NewLocalFilesystemAdapter(t.TempDir())
+	if err != nil {
+		t.Fatalf("building a local Disk: %v", err)
+	}
+	return filesystem.NewDisk("contracts", adapter)
+}
+
+// multipartContract stands in everyRoute for a valid contract form, which
+// answer builds as multipart with a signed file.
+const multipartContract = "<multipart contract>"
+
+// contractUpload is a contract every check passes, as a browser sends it.
+func contractUpload() (string, string) {
+	var body bytes.Buffer
+	w := multipart.NewWriter(&body)
+	for field, value := range map[string]string{
+		"number": "C-001", "signed_on": "2026-10-01", "starts_on": "2026-10-01",
+		"share_bps": "1500", "billing_day": "20", "all_products": "1",
+	} {
+		_ = w.WriteField(field, value)
+	}
+	header := make(textproto.MIMEHeader)
+	header.Set("Content-Disposition", `form-data; name="file"; filename="contrato.pdf"`)
+	header.Set("Content-Type", "application/pdf")
+	part, _ := w.CreatePart(header)
+	_, _ = part.Write([]byte("%PDF-1.4 signed"))
+	_ = w.Close()
+	return body.String(), w.FormDataContentType()
 }

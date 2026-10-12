@@ -3,6 +3,8 @@ package investor
 import (
 	"fmt"
 	"net/http"
+
+	"github.com/arandu-io/hesape/filesystem"
 )
 
 // The defaults for the optional settings. They are constants rather than
@@ -42,6 +44,12 @@ type Config struct {
 	// clamped: a number somebody wrote and did not get is worse than a number
 	// somebody wrote and was told about.
 	PageSize int
+
+	// Files is the Disk the signed contracts are kept on: the application's,
+	// local or S3, reached with the Grant so every key carries the tenant's
+	// prefix. Required: a contract without its signed copy is the one thing
+	// this package exists to keep.
+	Files *filesystem.Disk
 }
 
 // Validate reports what the configuration cannot be used with.
@@ -56,6 +64,9 @@ func (c Config) Validate() error {
 		if err := validateRoutePrefix(c.Prefix); err != nil {
 			return err
 		}
+	}
+	if c.Files == nil {
+		return fmt.Errorf("investor: Config.Files is nil: the signed contracts need a Disk, the application's own (filesystem.NewDisk), passed in here")
 	}
 	if c.PageSize < 0 || c.PageSize > MaxPageSize {
 		return fmt.Errorf("investor: Config.PageSize is %d, and has to be between 0 and %d, where 0 means %d", c.PageSize, MaxPageSize, DefaultPageSize)
@@ -79,6 +90,7 @@ func validateRoutePrefix(prefix string) (err error) {
 	mux.Handle(http.MethodGet+" "+prefix+"/me", handler)
 	mux.Handle(http.MethodGet+" "+prefix+"/admin/investors", handler)
 	mux.Handle(http.MethodGet+" "+prefix+"/admin/investors/{id}", handler)
+	mux.Handle(http.MethodGet+" "+prefix+"/contracts/{id}/file", handler)
 	return nil
 }
 

@@ -44,7 +44,7 @@ func module(t *testing.T) *investor.Module {
 	t.Helper()
 
 	sessions := security.NewSessionStore([]byte(sessionKey), time.Hour, false, security.NewMemoryBackend())
-	m, err := investor.New(investor.Config{}, data.Wrap(nil, data.DialectSQLite), sessions)
+	m, err := investor.New(investor.Config{Files: testDisk(t)}, data.Wrap(nil, data.DialectSQLite), sessions)
 	if err != nil {
 		t.Fatalf("building the module: %v", err)
 	}

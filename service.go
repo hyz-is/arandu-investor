@@ -9,6 +9,7 @@ import (
 	"github.com/arandu-io/framework/data"
 	"github.com/arandu-io/framework/security"
 	"github.com/arandu-io/framework/validation"
+	"github.com/arandu-io/hesape/filesystem"
 )
 
 // Pagination bounds for List. A request that asks for everything gets the
@@ -45,6 +46,10 @@ type InvestorService struct {
 	// now is the clock, a field so a test can hold it still. Every timestamp a
 	// row carries is read from here, never from time.Now at the call site.
 	now func() time.Time
+	// files is where the signed contracts are kept: the Disk the application
+	// passed in Config.Files, reached with the Grant so the tenant prefixes
+	// every key.
+	files *filesystem.Disk
 }
 
 // NewInvestorService wires the service over the application's database handle.

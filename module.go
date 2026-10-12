@@ -21,7 +21,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"mime"
 	stdhttp "net/http"
+	"strconv"
 	"strings"
 
 	"github.com/arandu-io/framework/data"
@@ -29,6 +32,7 @@ import (
 	fhttp "github.com/arandu-io/framework/http"
 	"github.com/arandu-io/framework/http/middleware"
 	"github.com/arandu-io/framework/security"
+	"github.com/arandu-io/framework/validation"
 	"github.com/arandu-io/hesape/database/migrations"
 	"github.com/arandu-io/hesape/database/schema"
 	"github.com/arandu-io/hesape/view"
@@ -80,12 +84,19 @@ func New(cfg Config, db *data.DB, sessions *security.SessionStore) (*Module, err
 		return nil, errors.New("investor: New needs a session store: every route is mounted behind RequireAuth, which reads it to admit a request and to put who is asking on it")
 	}
 	cfg = cfg.withDefaults()
+	svc := NewInvestorService(db)
+	svc.files = cfg.Files
 	return &Module{
 		cfg:      cfg,
-		svc:      NewInvestorService(db),
+		svc:      svc,
 		sessions: sessions,
 	}, nil
 }
+
+// Service is the use cases, for an application that calls them from its own
+// code: the events endpoint it owns, a job, a command. Every method asks the
+// policy, so handing it out opens nothing.
+func (m *Module) Service() *InvestorService { return m.svc }
 
 // Name is the module identifier: a lowercase slug, stable, no spaces.
 //
@@ -120,6 +131,15 @@ func (m *Module) Routes(r *fhttp.Router) {
 	r.Action(stdhttp.MethodPut, admin+"/investors/{id}", m.update).Name("investor.admin.investors.update")
 	r.Action(stdhttp.MethodPost, admin+"/investors/{id}/suspension", m.suspend).Name("investor.admin.investors.suspend")
 	r.Action(stdhttp.MethodDelete, admin+"/investors/{id}/suspension", m.reactivate).Name("investor.admin.investors.reactivate")
+
+	// Contracts: registered and amended by the admin, read by the admin and by
+	// the investor they belong to. The file is downloaded through the package,
+	// never linked, so the policy answers every read of it.
+	r.Action(stdhttp.MethodGet, admin+"/investors/{id}/contracts", m.contracts).Name("investor.admin.contracts.index")
+	r.Action(stdhttp.MethodPost, admin+"/investors/{id}/contracts", m.storeContract).Name("investor.admin.contracts.store")
+	r.Action(stdhttp.MethodPost, admin+"/contracts/{id}/amendments", m.amendContract).Name("investor.admin.contracts.amend")
+	r.Action(stdhttp.MethodGet, m.cfg.Prefix+"/me/contracts", m.myContracts).Name("investor.me.contracts")
+	r.Action(stdhttp.MethodGet, m.cfg.Prefix+"/contracts/{id}/file", m.contractFile).Name("investor.contracts.file")
 }
 
 // adminSegment is where the admin's routes sit under the prefix. One prefix for
@@ -311,12 +331,117 @@ func (m *Module) reactivate(ctx *fhttp.Context) error {
 	return ctx.JSON(stdhttp.StatusOK, resourceFromPointer(record))
 }
 
+// contractForm reads a contract or an amendment out of a multipart form: the
+// terms as fields, the signed copy as the part named "file". The body is read
+// up to the limit the service enforces, plus room for the fields.
+func contractForm(ctx *fhttp.Context) (ContractRequest, io.ReadCloser, error) {
+	ctx.Request.Body = stdhttp.MaxBytesReader(ctx.Response, ctx.Request.Body, MaxContractBytes+(1<<20))
+	if err := ctx.Request.ParseMultipartForm(MaxContractBytes); err != nil {
+		return ContractRequest{}, nil, validation.Errors{"file": {"could not be read; send the form as multipart/form-data, under the size limit"}}
+	}
+	share, _ := strconv.ParseInt(ctx.Request.FormValue("share_bps"), 10, 64)
+	day, _ := strconv.Atoi(ctx.Request.FormValue("billing_day"))
+	in := ContractRequest{
+		Number:      ctx.Request.FormValue("number"),
+		SignedOn:    ctx.Request.FormValue("signed_on"),
+		StartsOn:    ctx.Request.FormValue("starts_on"),
+		EndsOn:      ctx.Request.FormValue("ends_on"),
+		ShareBps:    share,
+		BillingDay:  day,
+		AllProducts: ctx.Request.FormValue("all_products") == "1" || ctx.Request.FormValue("all_products") == "true",
+		Products:    ctx.Request.MultipartForm.Value["products"],
+	}
+	file, header, err := ctx.Request.FormFile("file")
+	if err != nil {
+		return in, nil, nil
+	}
+	in.FileName = header.Filename
+	in.FileType = header.Header.Get("Content-Type")
+	return in, file, nil
+}
+
+// contracts answers every version of every contract of one investor.
+func (m *Module) contracts(ctx *fhttp.Context) error {
+	who, _ := ctx.User()
+	items, err := m.svc.InvestorContracts(ctx.Ctx(), who, ctx.Param("id"))
+	if err != nil {
+		return err
+	}
+	return ctx.JSON(stdhttp.StatusOK, ContractList{items: items})
+}
+
+// myContracts answers the contracts of the investor who is asking.
+func (m *Module) myContracts(ctx *fhttp.Context) error {
+	who, _ := ctx.User()
+	me, err := m.svc.Mine(ctx.Ctx(), who)
+	if err != nil {
+		return err
+	}
+	items, err := m.svc.InvestorContracts(ctx.Ctx(), who, me.ID)
+	if err != nil {
+		return err
+	}
+	return ctx.JSON(stdhttp.StatusOK, ContractList{items: items})
+}
+
+// storeContract registers the original version of a contract.
+func (m *Module) storeContract(ctx *fhttp.Context) error {
+	in, file, err := contractForm(ctx)
+	if err != nil {
+		return err
+	}
+	if file != nil {
+		defer file.Close()
+	}
+	who, _ := ctx.User()
+	record, err := m.svc.CreateContract(ctx.Ctx(), who, ctx.Param("id"), in, file)
+	if err != nil {
+		return err
+	}
+	return ctx.JSON(stdhttp.StatusCreated, NewContractResource(*record, cleanProducts(in.Products)))
+}
+
+// amendContract registers a new version of a contract.
+func (m *Module) amendContract(ctx *fhttp.Context) error {
+	in, file, err := contractForm(ctx)
+	if err != nil {
+		return err
+	}
+	if file != nil {
+		defer file.Close()
+	}
+	who, _ := ctx.User()
+	record, err := m.svc.AmendContract(ctx.Ctx(), who, ctx.Param("id"), in, file)
+	if err != nil {
+		return err
+	}
+	return ctx.JSON(stdhttp.StatusCreated, NewContractResource(*record, cleanProducts(in.Products)))
+}
+
+// contractFile streams the signed copy of one contract version, as a download.
+func (m *Module) contractFile(ctx *fhttp.Context) error {
+	who, _ := ctx.User()
+	record, file, err := m.svc.ContractFile(ctx.Ctx(), who, ctx.Param("id"))
+	if err != nil {
+		return err
+	}
+	defer file.Body.Close()
+	header := ctx.Response.Header()
+	header.Set("Content-Type", record.FileType)
+	header.Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": record.FileName}))
+	header.Set("Cache-Control", "private, no-store")
+	header.Set("X-Content-Type-Options", "nosniff")
+	ctx.Response.WriteHeader(stdhttp.StatusOK)
+	_, err = io.Copy(ctx.Response, file.Body)
+	return err
+}
+
 // Migrations declares the schema this module owns.
 //
 // They are returned in the order their names sort in, which is the order they
 // apply in: the name carries the order, and nothing else decides it.
 func (m *Module) Migrations() []foundation.Migration {
-	return []foundation.Migration{createInvestors{}}
+	return []foundation.Migration{createInvestors{}, createContracts{}, createContractProducts{}}
 }
 
 // The migration is reversible, and the assertion is here rather than discovered
@@ -374,4 +499,82 @@ func (createInvestors) Up(ctx context.Context, conn migrations.Connection) error
 // Down drops the table, which takes its indexes with it.
 func (createInvestors) Down(ctx context.Context, conn migrations.Connection) error {
 	return conn.Schema().DropIfExists(ctx, investorsTable)
+}
+
+var (
+	_ migrations.ReversibleMigration = createContracts{}
+	_ migrations.ReversibleMigration = createContractProducts{}
+)
+
+// createContracts is the table of contract versions.
+type createContracts struct{ migrations.BaseMigration }
+
+// GetName is the migration's identity, and it carries the order.
+func (createContracts) GetName() string { return "20261012_0002_create_investor_contracts" }
+
+// Up creates the table. A day is text in YYYY-MM-DD, so no engine moves it to
+// another day by reading it in its own timezone.
+func (createContracts) Up(ctx context.Context, conn migrations.Connection) error {
+	return conn.Schema().Create(ctx, contractsTable, func(table *schema.Blueprint) {
+		table.String("id", maxIdentifierLen).Primary()
+		table.String("tenant_id", maxIdentifierLen)
+		table.String("investor_id", maxIdentifierLen)
+		table.String("number", maxShortLen)
+		table.UnsignedSmallInteger("version").Default(1)
+		table.String("root_id", maxIdentifierLen)
+		table.String("signed_on", len(DayLayout))
+		table.String("starts_on", len(DayLayout))
+		table.String("ends_on", len(DayLayout)).Default("")
+		table.BigInteger("share_bps")
+		table.UnsignedSmallInteger("billing_day")
+		table.UnsignedSmallInteger("all_products").Default(0)
+		table.String("status", maxShortLen)
+		table.String("file_key", maxTextLen)
+		table.String("file_name", maxNameLen)
+		table.String("file_type", maxShortLen)
+		table.BigInteger("file_size")
+		table.String("file_sha256", maxIdentifierLen)
+		table.String("created_by", maxIdentifierLen)
+		table.Timestamp("created_at")
+		table.Timestamp("updated_at")
+
+		// One row per version of a contract. Two concurrent amendments of the
+		// same version both read version N and both write N+1; the index is what
+		// refuses the second.
+		table.Unique([]string{"tenant_id", "root_id", "version"}, "investor_contracts_version_uq")
+		table.Index([]string{"tenant_id", "investor_id", "created_at"}, "investor_contracts_investor_idx")
+		table.Index([]string{"tenant_id", "status"}, "investor_contracts_status_idx")
+	})
+}
+
+// Down drops the table.
+func (createContracts) Down(ctx context.Context, conn migrations.Connection) error {
+	return conn.Schema().DropIfExists(ctx, contractsTable)
+}
+
+// createContractProducts is the table of products a contract counts revenue of.
+type createContractProducts struct{ migrations.BaseMigration }
+
+// GetName is the migration's identity, and it carries the order.
+func (createContractProducts) GetName() string {
+	return "20261012_0003_create_investor_contract_products"
+}
+
+// Up creates the table, with a product named once per contract version.
+func (createContractProducts) Up(ctx context.Context, conn migrations.Connection) error {
+	return conn.Schema().Create(ctx, contractProductsTable, func(table *schema.Blueprint) {
+		table.String("id", maxIdentifierLen).Primary()
+		table.String("tenant_id", maxIdentifierLen)
+		table.String("contract_id", maxIdentifierLen)
+		table.String("product_id", maxIdentifierLen)
+		table.Timestamp("created_at")
+		table.Timestamp("updated_at")
+
+		table.Unique([]string{"tenant_id", "contract_id", "product_id"}, "investor_contract_products_uq")
+	})
+}
+
+// Down drops the table.
+func (createContractProducts) Down(ctx context.Context, conn migrations.Connection) error {
+	return conn.Schema().DropIfExists(ctx, contractProductsTable)
 }
