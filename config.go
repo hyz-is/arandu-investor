@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/arandu-io/hesape/filesystem"
+	"github.com/arandu-io/hesape/translation"
 	wallet "github.com/hyz-is/arandu-wallet"
 )
 
@@ -68,6 +69,10 @@ type Config struct {
 	// Payer is the company that pays the investors, printed on the yearly
 	// income report. Optional: left empty, the report prints a dash.
 	Payer Payer
+
+	// Translator is the application's own catalogue, asked before the one this
+	// package ships, key by key: "investor.screen.dashboard_title". Optional.
+	Translator *translation.Translator
 }
 
 // DefaultLocation is the timezone days are counted in when Config leaves

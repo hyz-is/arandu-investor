@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/arandu-io/framework/foundation"
+	"github.com/arandu-io/framework/view"
 )
 
 // The view sources this package hands to the project that installs it.
@@ -168,4 +169,171 @@ func viewName(path string) string {
 	name := strings.TrimPrefix(strings.TrimPrefix(path, viewRoot), "/")
 	name = strings.TrimSuffix(name, viewSuffix)
 	return strings.ReplaceAll(name, "/", ".")
+}
+
+// The screens this package renders, by the name their path gives them.
+const (
+	ViewDashboard       = "modules.investor.dashboard"
+	ViewStatement       = "modules.investor.statement"
+	ViewProjection      = "modules.investor.projection"
+	ViewAdminInvestors  = "modules.investor.admin.investors"
+	ViewAdminInvestor   = "modules.investor.admin.investor"
+	ViewAdminCosts      = "modules.investor.admin.costs"
+	ViewAdminEntries    = "modules.investor.admin.entries"
+	ViewAdminWithdrawal = "modules.investor.admin.withdrawals"
+)
+
+// FormState is what a form field reads from the page it is drawn on: what was
+// typed before a refusal, and the message for each field.
+type FormState struct{ view.Page }
+
+// FieldError is the first message for one field, empty when it was accepted.
+func (f FormState) FieldError(name string) string { return f.Page.FieldError(name) }
+
+// Screen is what every page of this package carries: the application's chrome,
+// the sentences, and where the package is mounted.
+type Screen struct {
+	view.Page
+	Labels Labels
+	Prefix string
+}
+
+// Form is the form state of the page.
+func (s Screen) Form() FormState { return FormState{Page: s.Page} }
+
+// ContractRow is one contract as a screen shows it.
+type ContractRow struct {
+	ID, Number, Share, Products, Status, Starts, Ends string
+	Version, BillingDay                               int
+	Active                                            bool
+	StatementURL, ProjectionURL, FileURL              string
+	CloseURL, AmendURL                                string
+}
+
+// InvoiceRow is one invoice as a screen shows it.
+type InvoiceRow struct {
+	ID, Period, Gross, Fees, Costs, Net, Share, Amount string
+	Status, StatusKey, Withdrawal, WithdrawalKey       string
+	Withdrawable                                       bool
+	WithdrawURL, ReceiptURL, RejectedReason            string
+}
+
+// AccountOption is one payout account a withdrawal can be paid into.
+type AccountOption struct{ ID, Label string }
+
+// DashboardPageData is the investor's own panel.
+type DashboardPageData struct {
+	Screen
+	Investor                                      string
+	Document                                      string
+	Available, Held, ReceivedYear, WithdrawnTotal string
+	Contracts                                     []ContractRow
+	Invoices                                      []InvoiceRow
+	Accounts                                      []AccountOption
+	Year, Month                                   int
+	ReportsURL, PixURL                            string
+}
+
+// StatementRow is one line of a statement.
+type StatementRow struct {
+	ID, Day, Product, Kind, Description                 string
+	Gross, Fee, FeeDetail, Cost, Net                    string
+	Estimate                                            bool
+	GrossSort, FeeSort, CostSort, NetSort, DaySortValue string
+}
+
+// StatementPageData is one contract's statement.
+type StatementPageData struct {
+	Screen
+	Contract                ContractRow
+	Rows                    []StatementRow
+	Gross, Fees, Costs, Net string
+	From, To, Kind, Product string
+	URL                     string
+	HasEstimates            bool
+}
+
+// ProjectedCostRow is one declared cost in the open period.
+type ProjectedCostRow struct{ Name, Category, Recurrence, Scope, Amount string }
+
+// ProjectionPageData is one contract's open period.
+type ProjectionPageData struct {
+	Screen
+	Contract                           ContractRow
+	PeriodStart, PeriodEnd             string
+	Costs                              []ProjectedCostRow
+	Gross, Fees, ProjectedCosts, Ratio string
+	EstimatedNet, EstimatedAmount      string
+}
+
+// InvestorRow is one investor in the admin's registry.
+type InvestorRow struct {
+	ID, Name, Document, Kind, Email, Status, User, URL string
+	Active                                             bool
+}
+
+// AdminInvestorsPageData is the admin's registry.
+type AdminInvestorsPageData struct {
+	Screen
+	Rows          []InvestorRow
+	StoreURL      string
+	Next, NextURL string
+}
+
+// AdminInvestorPageData is one investor, for the admin.
+type AdminInvestorPageData struct {
+	Screen
+	Investor                       InvestorRow
+	LegalName, LegalRepresentative string
+	Contracts                      []ContractRow
+	Invoices                       []InvoiceRow
+	ContractStoreURL               string
+	UpdateURL, SuspensionURL       string
+	ReportsURL                     string
+	Year, Month                    int
+	Today                          string
+}
+
+// CostRow is one declared cost.
+type CostRow struct {
+	ID, Name, Category, Amount, Recurrence, Starts, Ends, Scope, EndURL string
+	Ended                                                               bool
+}
+
+// AdminCostsPageData is the declared costs, for the admin.
+type AdminCostsPageData struct {
+	Screen
+	Rows            []CostRow
+	StoreURL, Today string
+}
+
+// EntryRow is one entry in the admin's books.
+type EntryRow struct {
+	ID, Day, Product, Kind, Description, Gross, Fee, Net, Source, Ref, ReverseURL string
+	Reversible                                                                    bool
+	GrossSort, DaySort                                                            string
+}
+
+// AdminEntriesPageData is the admin's books, a page at a time.
+type AdminEntriesPageData struct {
+	Screen
+	Rows                              []EntryRow
+	Query, Kind, Sort, Dir            string
+	CurrentPage, Pages, Total         int
+	URL, StoreURL, CloseDueURL, Today string
+}
+
+// WithdrawalRow is one investor's withdrawal request in the operator's queue.
+type WithdrawalRow struct {
+	ID, Investor, Amount, Account, Status, StatusKey, RequestedAt, Reason string
+	Open, Processing, Paid                                                bool
+	ProcessURL, PayURL, RejectURL, ReceiptURL                             string
+}
+
+// AdminWithdrawalsPageData is the queue of investors' withdrawals.
+type AdminWithdrawalsPageData struct {
+	Screen
+	Rows   []WithdrawalRow
+	Status string
+	URL    string
 }

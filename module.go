@@ -25,6 +25,7 @@ import (
 	"io"
 	"mime"
 	stdhttp "net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -35,9 +36,12 @@ import (
 	"github.com/arandu-io/framework/http/middleware"
 	"github.com/arandu-io/framework/security"
 	"github.com/arandu-io/framework/validation"
+	fview "github.com/arandu-io/framework/view"
 	"github.com/arandu-io/hesape/database/migrations"
 	"github.com/arandu-io/hesape/database/schema"
+	"github.com/arandu-io/hesape/translation"
 	"github.com/arandu-io/hesape/view"
+	wallet "github.com/hyz-is/arandu-wallet"
 )
 
 // Module is what the application registers.
@@ -155,11 +159,15 @@ func (m *Module) Routes(r *fhttp.Router) {
 	r.Action(stdhttp.MethodPost, m.cfg.Prefix+"/invoices/{id}/withdrawal", m.withdrawInvoice).Name("investor.invoices.withdraw")
 	r.Action(stdhttp.MethodGet, m.cfg.Prefix+"/me/reports/{year}/{month}", m.myMonthlyReport).Name("investor.me.reports.monthly")
 	r.Action(stdhttp.MethodGet, m.cfg.Prefix+"/me/reports/{year}", m.myAnnualReport).Name("investor.me.reports.annual")
+	r.Action(stdhttp.MethodPost, m.cfg.Prefix+"/me/payout-accounts", m.storePixAccount).Name("investor.me.payout_accounts.store")
+	r.Action(stdhttp.MethodGet, m.cfg.Prefix+"/invoices/{id}/receipt", m.invoiceReceipt).Name("investor.invoices.receipt")
 
 	// The admin's books: entries by hand, costs, closings, and any investor's
 	// invoices and reports.
+	r.Action(stdhttp.MethodGet, admin+"/entries", m.entries).Name("investor.admin.entries.index")
 	r.Action(stdhttp.MethodPost, admin+"/entries", m.storeEntry).Name("investor.admin.entries.store")
 	r.Action(stdhttp.MethodPost, admin+"/entries/{id}/reversal", m.reverseEntry).Name("investor.admin.entries.reverse")
+	r.Action(stdhttp.MethodGet, admin+"/costs", m.adminCosts).Name("investor.admin.costs.index")
 	r.Action(stdhttp.MethodPost, admin+"/costs", m.storeCost).Name("investor.admin.costs.store")
 	r.Action(stdhttp.MethodPost, admin+"/costs/{id}/end", m.endCost).Name("investor.admin.costs.end")
 	r.Action(stdhttp.MethodPost, admin+"/contracts/{id}/closings", m.closeContract).Name("investor.admin.closings.store")
@@ -167,6 +175,31 @@ func (m *Module) Routes(r *fhttp.Router) {
 	r.Action(stdhttp.MethodGet, admin+"/investors/{id}/invoices", m.invoices).Name("investor.admin.invoices.index")
 	r.Action(stdhttp.MethodGet, admin+"/investors/{id}/reports/{year}/{month}", m.monthlyReport).Name("investor.admin.reports.monthly")
 	r.Action(stdhttp.MethodGet, admin+"/investors/{id}/reports/{year}", m.annualReport).Name("investor.admin.reports.annual")
+
+	// The operator's side of the investors' withdrawals: the PIX is made
+	// outside the system, and the receipt is attached here.
+	r.Action(stdhttp.MethodGet, admin+"/withdrawals", m.withdrawals).Name("investor.admin.withdrawals.index")
+	r.Action(stdhttp.MethodPost, admin+"/withdrawals/{id}/processing", m.startWithdrawal).Name("investor.admin.withdrawals.process")
+	r.Action(stdhttp.MethodPost, admin+"/withdrawals/{id}/payment", m.payWithdrawal).Name("investor.admin.withdrawals.pay")
+	r.Action(stdhttp.MethodPost, admin+"/withdrawals/{id}/rejection", m.rejectWithdrawal).Name("investor.admin.withdrawals.reject")
+}
+
+// screen is what every page of this package is drawn with: the application's
+// chrome, built by view.New as for any of its own screens, the sentences in
+// the language the request negotiated, and where the package is mounted.
+func (m *Module) screen(ctx *fhttp.Context, who security.Subject, titleKey string) Screen {
+	labels := m.Labels(translation.Locale(ctx.Ctx()))
+	page := fview.New(ctx, labels.T(titleKey))
+	page.Authenticated = who.ID != ""
+	return Screen{Page: page, Labels: labels, Prefix: m.cfg.Prefix}
+}
+
+// today is the day it is in the application's timezone.
+func (m *Module) today() Day { return DayOf(time.Now(), m.cfg.Location) }
+
+// investorURL is the admin's page of one investor.
+func (m *Module) investorURL(id string) string {
+	return m.cfg.Prefix + adminSegment + "/investors/" + id
 }
 
 // adminSegment is where the admin's routes sit under the prefix. One prefix for
@@ -279,7 +312,27 @@ func (m *Module) index(ctx *fhttp.Context) error {
 	if len(records) == m.cfg.PageSize {
 		cursor = records[len(records)-1].ID
 	}
-	return ctx.JSON(stdhttp.StatusOK, collectionFromPointers(records, cursor))
+	if ctx.WantsJSON() {
+		return ctx.JSON(stdhttp.StatusOK, collectionFromPointers(records, cursor))
+	}
+	sc := m.screen(ctx, who, "screen.admin_investors_title")
+	rows := make([]InvestorRow, 0, len(records))
+	for _, r := range records {
+		rows = append(rows, investorRow(m.cfg.Prefix, sc.Labels, r))
+	}
+	return ctx.View(ViewAdminInvestors, AdminInvestorsPageData{
+		Screen: sc, Rows: rows, StoreURL: m.cfg.Prefix + adminSegment + "/investors",
+		Next: cursor, NextURL: nextPageURL(m.cfg.Prefix+adminSegment+"/investors", cursor),
+	})
+}
+
+// nextPageURL is the address of the page after the one shown, empty on the
+// last.
+func nextPageURL(base, cursor string) string {
+	if cursor == "" {
+		return ""
+	}
+	return base + "?cursor=" + url.QueryEscape(cursor)
 }
 
 // show answers one record.
@@ -289,7 +342,35 @@ func (m *Module) show(ctx *fhttp.Context) error {
 	if err != nil {
 		return err
 	}
-	return ctx.JSON(stdhttp.StatusOK, resourceFromPointer(record))
+	if ctx.WantsJSON() {
+		return ctx.JSON(stdhttp.StatusOK, resourceFromPointer(record))
+	}
+	contracts, err := m.svc.InvestorContracts(ctx.Ctx(), who, record.ID)
+	if err != nil {
+		return err
+	}
+	invoices, err := m.svc.InvoiceViews(ctx.Ctx(), who, record.ID)
+	if err != nil {
+		return err
+	}
+	sc := m.screen(ctx, who, "screen.admin_investor_title")
+	now := time.Now().In(m.cfg.Location)
+	base := m.investorURL(record.ID)
+	return ctx.View(ViewAdminInvestor, AdminInvestorPageData{
+		Screen:              sc,
+		Investor:            investorRow(m.cfg.Prefix, sc.Labels, record),
+		LegalName:           record.LegalName,
+		LegalRepresentative: record.LegalRepresentative,
+		Contracts:           contractRows(m.cfg.Prefix, sc.Labels, contracts),
+		Invoices:            invoiceRows(m.cfg.Prefix, sc.Labels, invoices),
+		ContractStoreURL:    base + "/contracts",
+		UpdateURL:           base,
+		SuspensionURL:       base + "/suspension",
+		ReportsURL:          base + "/reports",
+		Year:                now.Year(),
+		Month:               int(now.Month()),
+		Today:               string(m.today()),
+	})
 }
 
 // mine answers the investor whose login user is asking.
@@ -299,7 +380,41 @@ func (m *Module) mine(ctx *fhttp.Context) error {
 	if err != nil {
 		return err
 	}
-	return ctx.JSON(stdhttp.StatusOK, resourceFromPointer(record))
+	if ctx.WantsJSON() {
+		return ctx.JSON(stdhttp.StatusOK, resourceFromPointer(record))
+	}
+	contracts, err := m.svc.InvestorContracts(ctx.Ctx(), who, record.ID)
+	if err != nil {
+		return err
+	}
+	invoices, err := m.svc.InvoiceViews(ctx.Ctx(), who, record.ID)
+	if err != nil {
+		return err
+	}
+	accounts, err := m.svc.PayoutAccounts(ctx.Ctx(), who, record.ID)
+	if err != nil {
+		return err
+	}
+	sc := m.screen(ctx, who, "screen.dashboard_title")
+	now := time.Now().In(m.cfg.Location)
+	available, held, year, withdrawn := invoiceTotals(invoices, now.Year())
+	row := investorRow(m.cfg.Prefix, sc.Labels, record)
+	return ctx.View(ViewDashboard, DashboardPageData{
+		Screen:         sc,
+		Investor:       row.Name,
+		Document:       row.Document,
+		Available:      brl(available),
+		Held:           brl(held),
+		ReceivedYear:   brl(year),
+		WithdrawnTotal: brl(withdrawn),
+		Contracts:      contractRows(m.cfg.Prefix, sc.Labels, contracts),
+		Invoices:       invoiceRows(m.cfg.Prefix, sc.Labels, invoices),
+		Accounts:       accountOptions(accounts),
+		Year:           now.Year(),
+		Month:          int(now.Month()),
+		ReportsURL:     m.cfg.Prefix + "/me/reports",
+		PixURL:         m.cfg.Prefix + "/me/payout-accounts",
+	})
 }
 
 // store registers one investor.
@@ -319,6 +434,9 @@ func (m *Module) store(ctx *fhttp.Context) error {
 	if err != nil {
 		return err
 	}
+	if !ctx.WantsJSON() {
+		return ctx.Redirect(m.investorURL(record.ID))
+	}
 	return ctx.JSON(stdhttp.StatusCreated, resourceFromPointer(record))
 }
 
@@ -335,6 +453,9 @@ func (m *Module) update(ctx *fhttp.Context) error {
 	if err != nil {
 		return err
 	}
+	if !ctx.WantsJSON() {
+		return ctx.Redirect(m.investorURL(record.ID))
+	}
 	return ctx.JSON(stdhttp.StatusOK, resourceFromPointer(record))
 }
 
@@ -345,6 +466,9 @@ func (m *Module) suspend(ctx *fhttp.Context) error {
 	if err != nil {
 		return err
 	}
+	if !ctx.WantsJSON() {
+		return ctx.Redirect(m.investorURL(record.ID))
+	}
 	return ctx.JSON(stdhttp.StatusOK, resourceFromPointer(record))
 }
 
@@ -354,6 +478,9 @@ func (m *Module) reactivate(ctx *fhttp.Context) error {
 	record, err := m.svc.SetActive(ctx.Ctx(), who, ctx.Param("id"), true)
 	if err != nil {
 		return err
+	}
+	if !ctx.WantsJSON() {
+		return ctx.Redirect(m.investorURL(record.ID))
 	}
 	return ctx.JSON(stdhttp.StatusOK, resourceFromPointer(record))
 }
@@ -367,6 +494,11 @@ func contractForm(ctx *fhttp.Context) (ContractRequest, io.ReadCloser, error) {
 		return ContractRequest{}, nil, validation.Errors{"file": {"could not be read; send the form as multipart/form-data, under the size limit"}}
 	}
 	share, _ := strconv.ParseInt(ctx.Request.FormValue("share_bps"), 10, 64)
+	// A form types the share as a percentage, "15" or "12,5": two decimals of
+	// a percentage are basis points, the same arithmetic as reais in centavos.
+	if raw := ctx.Request.FormValue("share_percent"); raw != "" {
+		share, _ = parseReais(raw)
+	}
 	day, _ := strconv.Atoi(ctx.Request.FormValue("billing_day"))
 	in := ContractRequest{
 		Number:      ctx.Request.FormValue("number"),
@@ -376,7 +508,12 @@ func contractForm(ctx *fhttp.Context) (ContractRequest, io.ReadCloser, error) {
 		ShareBps:    share,
 		BillingDay:  day,
 		AllProducts: ctx.Request.FormValue("all_products") == "1" || ctx.Request.FormValue("all_products") == "true",
-		Products:    ctx.Request.MultipartForm.Value["products"],
+		Products:    splitProducts(ctx.Request.MultipartForm.Value["products"]),
+	}
+	// A form ticks "the whole application" by default; naming products is
+	// what narrows it.
+	if len(in.Products) > 0 {
+		in.AllProducts = false
 	}
 	file, header, err := ctx.Request.FormFile("file")
 	if err != nil {
@@ -385,6 +522,20 @@ func contractForm(ctx *fhttp.Context) (ContractRequest, io.ReadCloser, error) {
 	in.FileName = header.Filename
 	in.FileType = header.Header.Get("Content-Type")
 	return in, file, nil
+}
+
+// splitProducts reads product identifiers sent as repeated fields, as a
+// comma-separated line, or both.
+func splitProducts(values []string) []string {
+	var out []string
+	for _, v := range values {
+		for _, p := range strings.Split(v, ",") {
+			if p = strings.TrimSpace(p); p != "" {
+				out = append(out, p)
+			}
+		}
+	}
+	return out
 }
 
 // contracts answers every version of every contract of one investor.
@@ -425,6 +576,9 @@ func (m *Module) storeContract(ctx *fhttp.Context) error {
 	if err != nil {
 		return err
 	}
+	if !ctx.WantsJSON() {
+		return ctx.Redirect(m.investorURL(record.InvestorID))
+	}
 	return ctx.JSON(stdhttp.StatusCreated, NewContractResource(*record, cleanProducts(in.Products)))
 }
 
@@ -441,6 +595,9 @@ func (m *Module) amendContract(ctx *fhttp.Context) error {
 	record, err := m.svc.AmendContract(ctx.Ctx(), who, ctx.Param("id"), in, file)
 	if err != nil {
 		return err
+	}
+	if !ctx.WantsJSON() {
+		return ctx.Redirect(m.investorURL(record.InvestorID))
 	}
 	return ctx.JSON(stdhttp.StatusCreated, NewContractResource(*record, cleanProducts(in.Products)))
 }
@@ -477,7 +634,22 @@ func (m *Module) statement(ctx *fhttp.Context) error {
 	if err != nil {
 		return err
 	}
-	return ctx.JSON(stdhttp.StatusOK, statementResource{st})
+	if ctx.WantsJSON() {
+		return ctx.JSON(stdhttp.StatusOK, statementResource{st})
+	}
+	sc := m.screen(ctx, who, "screen.statement_title")
+	contract := contractRows(m.cfg.Prefix, sc.Labels, []ContractResource{NewContractResource(st.Contract, nil)})[0]
+	rows := statementRows(sc.Labels, st)
+	estimates := false
+	for _, r := range rows {
+		estimates = estimates || r.Estimate
+	}
+	return ctx.View(ViewStatement, StatementPageData{
+		Screen: sc, Contract: contract, Rows: rows,
+		Gross: brl(st.Gross), Fees: brl(st.Fees), Costs: brl(st.Costs), Net: brl(st.Net),
+		From: string(from), To: string(to), Kind: ctx.Query("kind"), Product: ctx.Query("product"),
+		URL: contract.StatementURL, HasEstimates: estimates,
+	})
 }
 
 // projection answers a contract's open period.
@@ -487,7 +659,80 @@ func (m *Module) projection(ctx *fhttp.Context) error {
 	if err != nil {
 		return err
 	}
-	return ctx.JSON(stdhttp.StatusOK, projectionResource{p})
+	if ctx.WantsJSON() {
+		return ctx.JSON(stdhttp.StatusOK, projectionResource{p})
+	}
+	sc := m.screen(ctx, who, "screen.projection_title")
+	costs := make([]ProjectedCostRow, 0, len(p.Costs))
+	for _, c := range p.Costs {
+		scope := sc.Labels.T("field.all_products")
+		if !bool(c.Item.AllProducts) {
+			scope = strings.Join(c.Products, ", ")
+		}
+		costs = append(costs, ProjectedCostRow{
+			Name: c.Item.Name, Category: c.Item.Category, Scope: scope, Amount: brl(c.Amount),
+			Recurrence: sc.Labels.T("recurrence." + string(c.Item.Recurrence)),
+		})
+	}
+	return ctx.View(ViewProjection, ProjectionPageData{
+		Screen:      sc,
+		Contract:    contractRows(m.cfg.Prefix, sc.Labels, []ContractResource{NewContractResource(p.Contract, nil)})[0],
+		PeriodStart: dayText(p.PeriodStart), PeriodEnd: dayText(p.PeriodEnd.AddDays(-1)),
+		Costs: costs, Gross: brl(p.Gross), Fees: brl(p.Fees), ProjectedCosts: brl(p.ProjectedCosts),
+		Ratio: ratioText(p.EstimatedCostRatioPPM), EstimatedNet: brl(p.EstimatedNet), EstimatedAmount: brl(p.EstimatedAmount),
+	})
+}
+
+// adminCosts is the declared costs, with the form that declares one.
+func (m *Module) adminCosts(ctx *fhttp.Context) error {
+	who, _ := ctx.User()
+	views, err := m.svc.AdminCosts(ctx.Ctx(), who)
+	if err != nil {
+		return err
+	}
+	if ctx.WantsJSON() {
+		return ctx.JSON(stdhttp.StatusOK, costsResource(views))
+	}
+	sc := m.screen(ctx, who, "screen.admin_costs_title")
+	return ctx.View(ViewAdminCosts, AdminCostsPageData{
+		Screen: sc, Rows: costRows(m.cfg.Prefix, sc.Labels, views, m.today()),
+		StoreURL: m.cfg.Prefix + adminSegment + "/costs", Today: string(m.today()),
+	})
+}
+
+// entries is the admin's books, a page at a time, searched, filtered and
+// ordered on the server.
+func (m *Module) entries(ctx *fhttp.Context) error {
+	page, _ := strconv.Atoi(ctx.Query("page"))
+	q := EntriesQuery{
+		Search: ctx.Query("q"), Kind: EntryKind(ctx.Query("kind")),
+		Sort: ctx.Query("sort"), Dir: ctx.Query("dir"), Page: page, PerPage: m.cfg.PageSize,
+	}
+	who, _ := ctx.User()
+	rows, total, err := m.svc.EntriesPage(ctx.Ctx(), who, q)
+	if err != nil {
+		return err
+	}
+	if ctx.WantsJSON() {
+		items := make([]map[string]any, 0, len(rows))
+		for _, e := range rows {
+			items = append(items, entryFields(*e))
+		}
+		return ctx.JSON(stdhttp.StatusOK, fieldsResource{"items": items, "total": total})
+	}
+	if page < 1 {
+		page = 1
+	}
+	pages := (total + m.cfg.PageSize - 1) / m.cfg.PageSize
+	sc := m.screen(ctx, who, "screen.admin_books_title")
+	base := m.cfg.Prefix + adminSegment
+	return ctx.View(ViewAdminEntries, AdminEntriesPageData{
+		Screen: sc, Rows: entryRows(m.cfg.Prefix, sc.Labels, rows),
+		Query: q.Search, Kind: string(q.Kind), Sort: q.Sort, Dir: q.Dir,
+		CurrentPage: page, Pages: pages, Total: total,
+		URL: base + "/entries", StoreURL: base + "/entries", CloseDueURL: base + "/closings/due",
+		Today: string(m.today()),
+	})
 }
 
 // costs answers the declared costs.
@@ -521,6 +766,9 @@ func (m *Module) withdrawInvoice(ctx *fhttp.Context) error {
 	view, err := m.svc.WithdrawInvoice(ctx.Ctx(), who, ctx.Param("id"), ctx.Input("account_id"))
 	if err != nil {
 		return err
+	}
+	if !ctx.WantsJSON() {
+		return ctx.Redirect(m.cfg.Prefix + "/me")
 	}
 	return ctx.JSON(stdhttp.StatusCreated, invoiceViewsResource([]InvoiceView{*view}))
 }
@@ -600,17 +848,22 @@ func (m *Module) annualReport(ctx *fhttp.Context) error {
 	})
 }
 
-// centavos reads an amount in centavos from a field.
+// centavos reads an amount in centavos from a field, or in reais from the
+// field of the same name ending in _brl, which is what a form types.
 func centavos(ctx *fhttp.Context, field string) int64 {
+	if raw := ctx.Input(field + "_brl"); raw != "" {
+		v, _ := parseReais(raw)
+		return v
+	}
 	v, _ := strconv.ParseInt(strings.TrimSpace(ctx.Input(field)), 10, 64)
 	return v
 }
 
 // storeEntry records an entry typed by the admin.
 func (m *Module) storeEntry(ctx *fhttp.Context) error {
-	at, err := time.Parse(time.RFC3339, ctx.Input("occurred_at"))
+	at, err := m.occurredAt(ctx)
 	if err != nil {
-		return validation.Errors{"occurred_at": {"must be a date and time in RFC 3339"}}
+		return err
 	}
 	who, _ := ctx.User()
 	e, err := m.svc.RecordManualEntry(ctx.Ctx(), who, EntryRequest{
@@ -622,7 +875,28 @@ func (m *Module) storeEntry(ctx *fhttp.Context) error {
 	if err != nil {
 		return err
 	}
+	if !ctx.WantsJSON() {
+		return ctx.Redirect(m.cfg.Prefix + adminSegment + "/entries")
+	}
 	return ctx.JSON(stdhttp.StatusCreated, entryResource{*e})
+}
+
+// occurredAt is when a typed entry happened: the instant the API sends, or
+// noon of the day a form sends, in the application's timezone.
+func (m *Module) occurredAt(ctx *fhttp.Context) (time.Time, error) {
+	if raw := ctx.Input("occurred_at"); raw != "" {
+		at, err := time.Parse(time.RFC3339, raw)
+		if err != nil {
+			return time.Time{}, validation.Errors{"occurred_at": {"must be a date and time in RFC 3339"}}
+		}
+		return at, nil
+	}
+	day, err := ParseDay(ctx.Input("occurred_on"))
+	if err != nil || day.IsZero() {
+		return time.Time{}, validation.Errors{"occurred_on": {"must be a day in the form " + DayLayout}}
+	}
+	t := day.Time()
+	return time.Date(t.Year(), t.Month(), t.Day(), 12, 0, 0, 0, m.cfg.Location), nil
 }
 
 // reverseEntry undoes an entry.
@@ -632,6 +906,9 @@ func (m *Module) reverseEntry(ctx *fhttp.Context) error {
 	if err != nil {
 		return err
 	}
+	if !ctx.WantsJSON() {
+		return ctx.Redirect(m.cfg.Prefix + adminSegment + "/entries")
+	}
 	return ctx.JSON(stdhttp.StatusCreated, entryResource{*e})
 }
 
@@ -640,15 +917,19 @@ func (m *Module) storeCost(ctx *fhttp.Context) error {
 	if err := ctx.Request.ParseForm(); err != nil {
 		return validation.Errors{"form": {"could not be read"}}
 	}
+	products := splitProducts(ctx.Request.PostForm["products"])
 	who, _ := ctx.User()
 	c, err := m.svc.CreateCost(ctx.Ctx(), who, CostRequest{
 		Name: ctx.Input("name"), Category: ctx.Input("category"), Amount: centavos(ctx, "amount"),
 		Recurrence: Recurrence(ctx.Input("recurrence")), StartsOn: ctx.Input("starts_on"),
-		EndsOn: ctx.Input("ends_on"), AllProducts: ctx.Input("all_products") == "1" || ctx.Input("all_products") == "true",
-		Products: ctx.Request.PostForm["products"],
+		EndsOn: ctx.Input("ends_on"), AllProducts: len(products) == 0 && (ctx.Input("all_products") == "1" || ctx.Input("all_products") == "true"),
+		Products: products,
 	})
 	if err != nil {
 		return err
+	}
+	if !ctx.WantsJSON() {
+		return ctx.Redirect(m.cfg.Prefix + adminSegment + "/costs")
 	}
 	return ctx.JSON(stdhttp.StatusCreated, costsResource([]CostView{{Item: *c}}))
 }
@@ -659,6 +940,9 @@ func (m *Module) endCost(ctx *fhttp.Context) error {
 	c, err := m.svc.EndCost(ctx.Ctx(), who, ctx.Param("id"), ctx.Input("ends_on"))
 	if err != nil {
 		return err
+	}
+	if !ctx.WantsJSON() {
+		return ctx.Redirect(m.cfg.Prefix + adminSegment + "/costs")
 	}
 	return ctx.JSON(stdhttp.StatusOK, costsResource([]CostView{{Item: *c}}))
 }
@@ -674,6 +958,9 @@ func (m *Module) closeContract(ctx *fhttp.Context) error {
 	if err != nil {
 		return err
 	}
+	if !ctx.WantsJSON() {
+		return ctx.Redirect(m.investorURL(inv.InvestorID))
+	}
 	return ctx.JSON(stdhttp.StatusCreated, invoicesResource([]*Invoice{inv}))
 }
 
@@ -688,7 +975,121 @@ func (m *Module) closeDue(ctx *fhttp.Context) error {
 	if err != nil {
 		return err
 	}
+	if !ctx.WantsJSON() {
+		return ctx.Redirect(m.cfg.Prefix + adminSegment + "/entries")
+	}
 	return ctx.JSON(stdhttp.StatusOK, closingsResource{closed: closed, failed: failed})
+}
+
+// storePixAccount declares a PIX key the asking investor is paid into.
+func (m *Module) storePixAccount(ctx *fhttp.Context) error {
+	who, _ := ctx.User()
+	account, err := m.svc.AddPixAccount(ctx.Ctx(), who, ctx.Input("pix_key_type"), ctx.Input("pix_key"))
+	if err != nil {
+		return err
+	}
+	if !ctx.WantsJSON() {
+		return ctx.Redirect(m.cfg.Prefix + "/me")
+	}
+	return ctx.JSON(stdhttp.StatusCreated, fieldsResource{"id": account.ID, "kind": account.Kind, "label": account.Label})
+}
+
+// invoiceReceipt streams the receipt of an invoice's paid withdrawal.
+func (m *Module) invoiceReceipt(ctx *fhttp.Context) error {
+	who, _ := ctx.User()
+	req, file, err := m.svc.InvoiceReceipt(ctx.Ctx(), who, ctx.Param("id"))
+	if err != nil {
+		return err
+	}
+	defer file.Body.Close()
+	header := ctx.Response.Header()
+	header.Set("Content-Type", req.ReceiptType)
+	header.Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": req.ReceiptName}))
+	header.Set("Cache-Control", "private, no-store")
+	header.Set("X-Content-Type-Options", "nosniff")
+	ctx.Response.WriteHeader(stdhttp.StatusOK)
+	_, err = io.Copy(ctx.Response, file.Body)
+	return err
+}
+
+// withdrawals is the operator's queue of investors' withdrawals, filtered by
+// ?status=.
+func (m *Module) withdrawals(ctx *fhttp.Context) error {
+	who, _ := ctx.User()
+	status := wallet.WithdrawalStatus(ctx.Query("status"))
+	list, err := m.svc.Withdrawals(ctx.Ctx(), who, status)
+	if err != nil {
+		return err
+	}
+	if ctx.WantsJSON() {
+		items := make([]map[string]any, 0, len(list))
+		for _, w := range list {
+			items = append(items, map[string]any{
+				"id": w.Request.ID, "invoice_id": w.Invoice.ID, "investor_id": w.Invoice.InvestorID,
+				"amount": int64(w.Request.Amount), "status": string(w.Request.Status),
+				"requested_at": w.Request.RequestedAt.UTC().Format(time.RFC3339),
+			})
+		}
+		return ctx.JSON(stdhttp.StatusOK, fieldsResource{"items": items})
+	}
+	sc := m.screen(ctx, who, "screen.admin_withdrawals_title")
+	return ctx.View(ViewAdminWithdrawal, AdminWithdrawalsPageData{
+		Screen: sc, Rows: withdrawalRows(m.cfg.Prefix, sc.Labels, list, m.cfg.Location),
+		Status: string(status), URL: m.cfg.Prefix + adminSegment + "/withdrawals",
+	})
+}
+
+// startWithdrawal takes an investor's withdrawal to be paid.
+func (m *Module) startWithdrawal(ctx *fhttp.Context) error {
+	who, _ := ctx.User()
+	req, err := m.svc.StartPaying(ctx.Ctx(), who, ctx.Param("id"))
+	if err != nil {
+		return err
+	}
+	if !ctx.WantsJSON() {
+		return ctx.Redirect(m.cfg.Prefix + adminSegment + "/withdrawals")
+	}
+	return ctx.JSON(stdhttp.StatusOK, fieldsResource{"id": req.ID, "status": string(req.Status)})
+}
+
+// payWithdrawal records that an investor's withdrawal was paid, with the
+// end-to-end identifier of the PIX and the receipt as the part named
+// "receipt" of a multipart form.
+func (m *Module) payWithdrawal(ctx *fhttp.Context) error {
+	ctx.Request.Body = stdhttp.MaxBytesReader(ctx.Response, ctx.Request.Body, MaxContractBytes+(1<<20))
+	if err := ctx.Request.ParseMultipartForm(MaxContractBytes); err != nil {
+		return validation.Errors{"receipt": {"could not be read; send the form as multipart/form-data, under the size limit"}}
+	}
+	in := wallet.PaymentInput{RequestID: ctx.Param("id"), EndToEndID: strings.TrimSpace(ctx.Request.FormValue("end_to_end_id"))}
+	file, header, err := ctx.Request.FormFile("receipt")
+	if err != nil {
+		return validation.Errors{"receipt": {"is required"}}
+	}
+	defer file.Close()
+	in.ReceiptName = header.Filename
+	in.ReceiptType = header.Header.Get("Content-Type")
+	who, _ := ctx.User()
+	req, err := m.svc.PayInvestorWithdrawal(ctx.Ctx(), who, in, file)
+	if err != nil {
+		return err
+	}
+	if !ctx.WantsJSON() {
+		return ctx.Redirect(m.cfg.Prefix + adminSegment + "/withdrawals")
+	}
+	return ctx.JSON(stdhttp.StatusOK, fieldsResource{"id": req.ID, "status": string(req.Status)})
+}
+
+// rejectWithdrawal refuses an investor's withdrawal with a reason.
+func (m *Module) rejectWithdrawal(ctx *fhttp.Context) error {
+	who, _ := ctx.User()
+	req, err := m.svc.RejectInvestorWithdrawal(ctx.Ctx(), who, ctx.Param("id"), ctx.Input("reason"))
+	if err != nil {
+		return err
+	}
+	if !ctx.WantsJSON() {
+		return ctx.Redirect(m.cfg.Prefix + adminSegment + "/withdrawals")
+	}
+	return ctx.JSON(stdhttp.StatusOK, fieldsResource{"id": req.ID, "status": string(req.Status)})
 }
 
 // asOf is the day a closing runs as of: the input's, or today in the

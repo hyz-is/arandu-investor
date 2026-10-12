@@ -230,6 +230,13 @@ func NewContractResource(c Contract, products []string) ContractResource {
 	return ContractResource{c: c, products: products}
 }
 
+// Contract is the version the resource describes.
+func (r ContractResource) Contract() Contract { return r.c }
+
+// Products are the products the version's revenue counts, empty when it
+// counts the whole application's.
+func (r ContractResource) Products() []string { return append([]string(nil), r.products...) }
+
 // ToArray returns the fields that may leave, by name. The file is described,
 // never linked: it is read through the package's own download route, which
 // asks the policy first.

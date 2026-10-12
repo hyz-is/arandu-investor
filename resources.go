@@ -171,3 +171,10 @@ func (r invoiceViewsResource) ToArray() map[string]any {
 	return map[string]any{"items": items}
 }
 func (r invoiceViewsResource) With() map[string]any { return nil }
+
+// fieldsResource is a response whose fields the handler declared one by one,
+// for the small answers that have no entity of their own.
+type fieldsResource map[string]any
+
+func (r fieldsResource) ToArray() map[string]any { return r }
+func (r fieldsResource) With() map[string]any    { return nil }

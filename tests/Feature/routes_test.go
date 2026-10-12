@@ -108,8 +108,11 @@ func (m mounted) answer(t *testing.T, method, target, body string, cookies ...*h
 	t.Helper()
 
 	contentType := "application/x-www-form-urlencoded"
-	if body == multipartContract {
+	switch body {
+	case multipartContract:
 		body, contentType = contractUpload()
+	case multipartReceipt:
+		body, contentType = receiptUpload()
 	}
 	req := httptest.NewRequest(method, target, strings.NewReader(body))
 	if body != "" {
@@ -169,6 +172,14 @@ var everyRoute = []struct {
 	{http.MethodGet, investor.DefaultPrefix + "/admin/investors/record-1/invoices", "", true},
 	{http.MethodGet, investor.DefaultPrefix + "/admin/investors/record-1/reports/2026/10", "", true},
 	{http.MethodGet, investor.DefaultPrefix + "/admin/investors/record-1/reports/2026", "", true},
+	{http.MethodGet, investor.DefaultPrefix + "/admin/entries", "", false},
+	{http.MethodGet, investor.DefaultPrefix + "/admin/costs", "", false},
+	{http.MethodGet, investor.DefaultPrefix + "/admin/withdrawals", "", false},
+	{http.MethodPost, investor.DefaultPrefix + "/admin/withdrawals/record-1/processing", "", false},
+	{http.MethodPost, investor.DefaultPrefix + "/admin/withdrawals/record-1/payment", multipartReceipt, false},
+	{http.MethodPost, investor.DefaultPrefix + "/admin/withdrawals/record-1/rejection", "reason=dados+divergentes", false},
+	{http.MethodGet, investor.DefaultPrefix + "/invoices/record-1/receipt", "", true},
+	{http.MethodPost, investor.DefaultPrefix + "/me/payout-accounts", "pix_key_type=email&pix_key=ana%40example.com", true},
 }
 
 // validPersonForm is a registration every check passes, so a refusal of it is
@@ -276,16 +287,20 @@ func TestTheModuleRegistersItsRoutesUnderItsPrefix(t *testing.T) {
 
 	want := []string{
 		"DELETE /widgets/admin/investors/{id}/suspension",
+		"GET /widgets/admin/costs",
+		"GET /widgets/admin/entries",
 		"GET /widgets/admin/investors",
 		"GET /widgets/admin/investors/{id}",
 		"GET /widgets/admin/investors/{id}/contracts",
 		"GET /widgets/admin/investors/{id}/invoices",
 		"GET /widgets/admin/investors/{id}/reports/{year}",
 		"GET /widgets/admin/investors/{id}/reports/{year}/{month}",
+		"GET /widgets/admin/withdrawals",
 		"GET /widgets/contracts/{id}/file",
 		"GET /widgets/contracts/{id}/projection",
 		"GET /widgets/contracts/{id}/statement",
 		"GET /widgets/costs",
+		"GET /widgets/invoices/{id}/receipt",
 		"GET /widgets/me",
 		"GET /widgets/me/contracts",
 		"GET /widgets/me/invoices",
@@ -301,7 +316,11 @@ func TestTheModuleRegistersItsRoutesUnderItsPrefix(t *testing.T) {
 		"POST /widgets/admin/investors",
 		"POST /widgets/admin/investors/{id}/contracts",
 		"POST /widgets/admin/investors/{id}/suspension",
+		"POST /widgets/admin/withdrawals/{id}/payment",
+		"POST /widgets/admin/withdrawals/{id}/processing",
+		"POST /widgets/admin/withdrawals/{id}/rejection",
 		"POST /widgets/invoices/{id}/withdrawal",
+		"POST /widgets/me/payout-accounts",
 		"PUT /widgets/admin/investors/{id}",
 	}
 
@@ -452,6 +471,24 @@ func contractUpload() (string, string) {
 	header.Set("Content-Type", "application/pdf")
 	part, _ := w.CreatePart(header)
 	_, _ = part.Write([]byte("%PDF-1.4 signed"))
+	_ = w.Close()
+	return body.String(), w.FormDataContentType()
+}
+
+// multipartReceipt stands in everyRoute for a valid payment form, which
+// answer builds as multipart with a receipt.
+const multipartReceipt = "<multipart receipt>"
+
+// receiptUpload is a payment every check passes, as a browser sends it.
+func receiptUpload() (string, string) {
+	var body bytes.Buffer
+	w := multipart.NewWriter(&body)
+	_ = w.WriteField("end_to_end_id", "E00000000202610201200abcdef123456")
+	header := make(textproto.MIMEHeader)
+	header.Set("Content-Disposition", `form-data; name="receipt"; filename="comprovante.pdf"`)
+	header.Set("Content-Type", "application/pdf")
+	part, _ := w.CreatePart(header)
+	_, _ = part.Write([]byte("%PDF-1.4 receipt"))
 	_ = w.Close()
 	return body.String(), w.FormDataContentType()
 }
