@@ -3,6 +3,8 @@ package investor
 import (
 	"context"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/arandu-io/framework/data"
 	"github.com/arandu-io/framework/security"
@@ -26,8 +28,8 @@ var sortableInvestor = map[string]string{
 }
 
 // InvestorService orchestrates the use cases of this package: it validates the
-// request, asks the policy for a Grant, applies the rules the entity holds for
-// itself, and persists with that Grant.
+// request, asks the policy for a Grant, applies the rules the entities hold for
+// themselves, and persists with that Grant.
 //
 // It receives its collaborators through the constructor. There is no container
 // and no resolution by reflection: what this service is made of is written at
@@ -40,37 +42,79 @@ var sortableInvestor = map[string]string{
 type InvestorService struct {
 	db     *data.DB
 	policy InvestorPolicy
+	// now is the clock, a field so a test can hold it still. Every timestamp a
+	// row carries is read from here, never from time.Now at the call site.
+	now func() time.Time
 }
 
 // NewInvestorService wires the service over the application's database handle.
 func NewInvestorService(db *data.DB) *InvestorService {
-	return &InvestorService{db: db}
+	return &InvestorService{db: db, now: func() time.Time { return time.Now().UTC() }}
 }
 
-// CreateRequest is the input contract.
+// CreateRequest is the input contract for registering an investor.
 //
 // The fields are explicit and there is no mass assignment, so a request body
 // cannot write a column nobody meant to expose. There is no TenantID here and
 // there must never be one: the tenant comes from the Grant, which comes from
 // the session.
 type CreateRequest struct {
-	// Name is what the record will be called.
+	// UserID is the login user who is this investor.
+	UserID string
+	// Kind is Person or Company.
+	Kind PersonKind
+	// Document is the CPF or the CNPJ, formatted or not.
+	Document string
+	// Name is the person's name, or the company's trade name.
 	Name string
+	// LegalName is the company's registered name. Required for a company.
+	LegalName string
+	// LegalRepresentative is who signs for the company. Required for a company.
+	LegalRepresentative string
+	// Email is where the investor is reached.
+	Email string
 }
 
 // Validate reports the errors per field.
 func (r CreateRequest) Validate() validation.Errors {
 	e := validation.Errors{}
+	validation.Required(e, "user_id", r.UserID)
+	validation.MaxLen(e, "user_id", r.UserID, maxIdentifierLen)
 	validation.Required(e, "name", r.Name)
-	validation.MaxLen(e, "name", r.Name, 120)
+	validation.MaxLen(e, "name", r.Name, maxNameLen)
+	validation.Required(e, "email", r.Email)
+	validation.Email(e, "email", r.Email)
+	validation.MaxLen(e, "email", r.Email, maxEmailLen)
+	switch r.Kind {
+	case Person:
+	case Company:
+		validation.Required(e, "legal_name", r.LegalName)
+		validation.MaxLen(e, "legal_name", r.LegalName, maxNameLen)
+		validation.Required(e, "legal_representative", r.LegalRepresentative)
+		validation.MaxLen(e, "legal_representative", r.LegalRepresentative, maxNameLen)
+	default:
+		e.Add("person_kind", fmt.Sprintf("must be %q or %q", Person, Company))
+	}
+	if r.Kind == Person || r.Kind == Company {
+		if _, err := normalizeDocument(r.Kind, r.Document); err != nil {
+			e.Add("document", "is not a valid "+documentName(r.Kind))
+		}
+	}
 	return e
+}
+
+func documentName(kind PersonKind) string {
+	if kind == Company {
+		return "CNPJ"
+	}
+	return "CPF"
 }
 
 // Compile-time proof that the request honors the validation contract.
 var _ validation.Validatable = CreateRequest{}
 
-// Create is the whole path in one function: validate, authorize, then act with
-// the Grant the authorization produced.
+// Create registers an investor: validate, authorize, then act with the Grant
+// the authorization produced.
 //
 // The candidate is authorized before it is stored, and the candidate is what
 // the policy sees -- so a rule about what may be created is a rule about the
@@ -79,10 +123,23 @@ func (s *InvestorService) Create(ctx context.Context, actor security.Subject, in
 	if errs := in.Validate(); errs.Any() {
 		return nil, errs
 	}
+	document, _ := normalizeDocument(in.Kind, in.Document)
 
-	proposed := Investor{Name: in.Name}
+	proposed := Investor{
+		UserID:              strings.TrimSpace(in.UserID),
+		Kind:                in.Kind,
+		Document:            document,
+		Name:                strings.TrimSpace(in.Name),
+		LegalName:           strings.TrimSpace(in.LegalName),
+		LegalRepresentative: strings.TrimSpace(in.LegalRepresentative),
+		Email:               strings.TrimSpace(in.Email),
+		Status:              InvestorActive,
+	}
+	if proposed.Kind == Person {
+		proposed.LegalName, proposed.LegalRepresentative = "", ""
+	}
 
-	g, err := security.Authorize(ctx, s.policy, actor, InvestorCreate, proposed)
+	g, err := security.Authorize(ctx, s.policy, actor, InvestorsManage, proposed)
 	if err != nil {
 		return nil, err
 	}
@@ -96,31 +153,120 @@ func (s *InvestorService) Create(ctx context.Context, actor security.Subject, in
 	if err != nil {
 		return nil, err
 	}
+	now := s.now()
 	candidate.ID = proposed.ID
 	candidate.TenantID = data.Tenant(g)
+	candidate.UserID = proposed.UserID
+	candidate.Kind = proposed.Kind
+	candidate.Document = proposed.Document
 	candidate.Name = proposed.Name
+	candidate.LegalName = proposed.LegalName
+	candidate.LegalRepresentative = proposed.LegalRepresentative
+	candidate.Email = proposed.Email
+	candidate.Status = proposed.Status
+	candidate.CreatedAt = now
+	candidate.UpdatedAt = now
 	if _, err := candidate.Save(ctx, g); err != nil {
 		return nil, err
 	}
 	return candidate, nil
 }
 
-// Find returns one record, and asks the policy twice.
+// UpdateRequest is what may change in an investor after it is registered.
+// The kind and the document are not here: a person does not become a company,
+// and a different document is a different investor.
+type UpdateRequest struct {
+	Name                string
+	LegalName           string
+	LegalRepresentative string
+	Email               string
+}
+
+// Update changes the names and the e-mail of an investor.
+func (s *InvestorService) Update(ctx context.Context, actor security.Subject, id string, in UpdateRequest) (*Investor, error) {
+	g, err := security.Authorize(ctx, s.policy, actor, InvestorsManage, Investor{})
+	if err != nil {
+		return nil, err
+	}
+	record, err := Investors(s.db).WhereKey(id).First(ctx, g)
+	if err != nil {
+		return nil, err
+	}
+	if record == nil {
+		return nil, ErrNotFound
+	}
+	if _, err := security.Authorize(ctx, s.policy, actor, InvestorsManage, *record); err != nil {
+		return nil, err
+	}
+
+	e := validation.Errors{}
+	validation.Required(e, "name", in.Name)
+	validation.MaxLen(e, "name", in.Name, maxNameLen)
+	validation.Required(e, "email", in.Email)
+	validation.Email(e, "email", in.Email)
+	if record.Kind == Company {
+		validation.Required(e, "legal_name", in.LegalName)
+		validation.Required(e, "legal_representative", in.LegalRepresentative)
+	}
+	if e.Any() {
+		return nil, e
+	}
+
+	record.Name = strings.TrimSpace(in.Name)
+	record.Email = strings.TrimSpace(in.Email)
+	if record.Kind == Company {
+		record.LegalName = strings.TrimSpace(in.LegalName)
+		record.LegalRepresentative = strings.TrimSpace(in.LegalRepresentative)
+	}
+	record.UpdatedAt = s.now()
+	if _, err := record.Save(ctx, g); err != nil {
+		return nil, err
+	}
+	return record, nil
+}
+
+// SetActive suspends or reactivates an investor. A suspended investor keeps
+// the whole history and is left out of the closings that follow.
+func (s *InvestorService) SetActive(ctx context.Context, actor security.Subject, id string, active bool) (*Investor, error) {
+	g, err := security.Authorize(ctx, s.policy, actor, InvestorsManage, Investor{})
+	if err != nil {
+		return nil, err
+	}
+	record, err := Investors(s.db).WhereKey(id).First(ctx, g)
+	if err != nil {
+		return nil, err
+	}
+	if record == nil {
+		return nil, ErrNotFound
+	}
+	if _, err := security.Authorize(ctx, s.policy, actor, InvestorsManage, *record); err != nil {
+		return nil, err
+	}
+	if active {
+		err = record.Reactivate(s.now())
+	} else {
+		err = record.Suspend(s.now())
+	}
+	if err != nil {
+		return nil, validation.Errors{"status": {err.Error()}}
+	}
+	if _, err := record.Save(ctx, g); err != nil {
+		return nil, err
+	}
+	return record, nil
+}
+
+// Find returns one investor for the admin, and asks the policy twice.
 //
 // The first call is on the empty candidate, because there is no way to read the
 // record without a Grant and no way to hold a Grant without a decision. What it
-// decides is whether this subject may view records of this kind at all.
+// decides is whether this subject may manage investors at all -- an investor
+// reads their own row through Mine, never by naming an identifier.
 //
 // The second call is on the record that came back, and it is the one a rule
-// about the record itself depends on: the first call saw an empty value, so
-// anything the policy says about who owns the row, or about a row that is not
-// published yet, never ran. Without it a policy can be written that looks
-// correct, reads correctly, and is never consulted about the thing it protects.
-//
-// The read itself is already scoped by data.Tenant, so the second call is not
-// what keeps customers apart. It is what keeps the policy honest.
+// about the record itself depends on.
 func (s *InvestorService) Find(ctx context.Context, actor security.Subject, id string) (*Investor, error) {
-	g, err := security.Authorize(ctx, s.policy, actor, InvestorView, Investor{})
+	g, err := security.Authorize(ctx, s.policy, actor, InvestorsManage, Investor{})
 	if err != nil {
 		return nil, err
 	}
@@ -133,25 +279,41 @@ func (s *InvestorService) Find(ctx context.Context, actor security.Subject, id s
 		return nil, ErrNotFound
 	}
 
-	if _, err := security.Authorize(ctx, s.policy, actor, InvestorView, *record); err != nil {
+	if _, err := security.Authorize(ctx, s.policy, actor, InvestorsManage, *record); err != nil {
 		return nil, err
 	}
 	return record, nil
 }
 
-// List returns a page of records.
+// Mine returns the investor whose login user is the subject, which is how the
+// investor's own panel finds what to show. ErrNotFound when the subject is not
+// an investor of this tenant.
+func (s *InvestorService) Mine(ctx context.Context, actor security.Subject) (*Investor, error) {
+	g, err := security.Authorize(ctx, s.policy, actor, DashboardView, Investor{})
+	if err != nil {
+		return nil, err
+	}
+	record, err := Investors(s.db).Where("user_id", "=", actor.ID).First(ctx, g)
+	if err != nil {
+		return nil, err
+	}
+	if record == nil {
+		return nil, ErrNotFound
+	}
+	if _, err := security.Authorize(ctx, s.policy, actor, DashboardView, *record); err != nil {
+		return nil, err
+	}
+	return record, nil
+}
+
+// List returns a page of investors, for the admin.
 //
 // It authorizes once, on the empty candidate, and the tenant filter in the
-// statement is what bounds the rows. A policy call per row would be one call
-// per record on a page and would still not narrow the query -- a listing that
-// has to read a customer's rows in order to decide it may not read them has
-// already read them.
-//
-// A rule that hides individual records from a listing belongs in the statement,
-// as a predicate, and the action here is what decides whether the listing may
-// run at all.
+// statement is what bounds the rows. Listing every investor is an admin's
+// question: the probe for InvestorsManage refuses an investor, who reads their
+// own row through Mine instead.
 func (s *InvestorService) List(ctx context.Context, actor security.Subject, q data.Query) ([]*Investor, error) {
-	g, err := security.Authorize(ctx, s.policy, actor, InvestorList, Investor{})
+	g, err := security.Authorize(ctx, s.policy, actor, InvestorsManage, Investor{})
 	if err != nil {
 		return nil, err
 	}

@@ -30,45 +30,96 @@ import (
 // keeps that order visible on every service method, including an allowed path.
 
 // everyAction is the whole set the policy answers about. A test that listed
-// four of five would pass while the fifth was open.
+// five of six would pass while the sixth was open.
 var everyAction = []security.Action{
-	investor.InvestorView,
-	investor.InvestorList,
-	investor.InvestorCreate,
-	investor.InvestorUpdate,
-	investor.InvestorDelete,
+	investor.InvestorsManage,
+	investor.EntriesManage,
+	investor.CostsManage,
+	investor.DashboardView,
+	investor.ContractView,
+	investor.ReportsView,
 }
 
-// administrator is the most privileged subject an application can produce. It
-// is the one to test the default with: a policy that refuses an administrator
-// refuses everyone.
-func administrator() security.Subject {
+// manageActions are the ones only the admin takes.
+var manageActions = []security.Action{investor.InvestorsManage, investor.EntriesManage, investor.CostsManage}
+
+// readActions are the ones an investor takes about their own row.
+var readActions = []security.Action{investor.DashboardView, investor.ContractView, investor.ReportsView}
+
+// signedIn is a person with a session and no role this package knows: the
+// subject every refusal below is written for.
+func signedIn() security.Subject {
 	return security.Subject{ID: "user-1", Tenant: "acme", Roles: []string{"admin"}, Verified: true}
 }
 
-func TestThePolicyDeniesEveryActionByDefault(t *testing.T) {
+// finance is the subject the application gave the package's admin role.
+func finance() security.Subject {
+	return security.Subject{ID: "user-9", Tenant: "acme", Roles: []string{investor.AdminRole}, Verified: true}
+}
+
+func row(id, tenant, user string) investor.Investor {
+	return investor.Investor{ID: id, TenantID: tenant, UserID: user, Name: "Ana", Kind: investor.Person}
+}
+
+func TestThePolicyRefusesWhatNoRuleAllows(t *testing.T) {
+	t.Parallel()
+
+	// A role named "admin" is the application's, not this package's: it opens
+	// nothing here. The package's own role is AdminRole, and nothing else.
+	for _, action := range manageActions {
+		_, err := security.Authorize(context.Background(), investor.InvestorPolicy{},
+			signedIn(), action, investor.Investor{})
+		if !errors.Is(err, security.ErrForbidden) {
+			t.Errorf("a subject without %s was allowed %s: got %v, want ErrForbidden", investor.AdminRole, action, err)
+		}
+	}
+	for _, action := range readActions {
+		_, err := security.Authorize(context.Background(), investor.InvestorPolicy{},
+			signedIn(), action, row("inv-2", "acme", "somebody-else"))
+		if !errors.Is(err, security.ErrForbidden) {
+			t.Errorf("a subject read %s of somebody else's investor: got %v, want ErrForbidden", action, err)
+		}
+	}
+}
+
+func TestTheInvestorReadsTheirOwnRowAndNothingElse(t *testing.T) {
+	t.Parallel()
+
+	mine := row("inv-1", "acme", "user-1")
+	for _, action := range readActions {
+		if _, err := security.Authorize(context.Background(), investor.InvestorPolicy{}, signedIn(), action, mine); err != nil {
+			t.Errorf("the investor was refused %s on their own row: %v", action, err)
+		}
+	}
+	for _, action := range manageActions {
+		if _, err := security.Authorize(context.Background(), investor.InvestorPolicy{}, signedIn(), action, mine); !errors.Is(err, security.ErrForbidden) {
+			t.Errorf("the investor was allowed %s on their own row: %v", action, err)
+		}
+	}
+}
+
+func TestTheAdminActsAcrossItsTenantAndNoFurther(t *testing.T) {
 	t.Parallel()
 
 	for _, action := range everyAction {
-		t.Run(string(action), func(t *testing.T) {
-			t.Parallel()
-
-			_, err := security.Authorize(context.Background(), investor.InvestorPolicy{},
-				administrator(), action, investor.Investor{})
-			if !errors.Is(err, security.ErrForbidden) {
-				t.Fatalf("an unopened policy allowed %s: got %v, want ErrForbidden", action, err)
-			}
-		})
+		if _, err := security.Authorize(context.Background(), investor.InvestorPolicy{}, finance(), action, investor.Investor{}); err != nil {
+			t.Errorf("the admin was refused %s: %v", action, err)
+		}
+		if _, err := security.Authorize(context.Background(), investor.InvestorPolicy{}, finance(), action, row("inv-1", "acme", "user-1")); err != nil {
+			t.Errorf("the admin was refused %s on an investor of its tenant: %v", action, err)
+		}
+		if _, err := security.Authorize(context.Background(), investor.InvestorPolicy{}, finance(), action, row("inv-1", "globex", "user-1")); !errors.Is(err, security.ErrForbidden) {
+			t.Errorf("the admin was allowed %s on another tenant's investor: %v", action, err)
+		}
 	}
 }
 
 func TestThePolicyDeniesARecordOfAnotherTenant(t *testing.T) {
 	t.Parallel()
 
-	other := investor.Investor{ID: "record-1", TenantID: "globex", Name: "theirs"}
+	other := row("record-1", "globex", "user-1")
 
-	err := investor.InvestorPolicy{}.Can(context.Background(),
-		administrator(), investor.InvestorView, other)
+	err := investor.InvestorPolicy{}.Can(context.Background(), signedIn(), investor.DashboardView, other)
 	if err == nil {
 		t.Fatal("the policy allowed a record belonging to another tenant")
 	}
@@ -98,7 +149,7 @@ func TestAuthorizeRefusesASubjectThatIsNobody(t *testing.T) {
 	// reader, and it is refused before the policy is consulted. A package that
 	// answered it as a guest would answer a broken session as a visitor.
 	_, err := security.Authorize(context.Background(), investor.InvestorPolicy{},
-		security.Subject{}, investor.InvestorView, investor.Investor{})
+		security.Subject{}, investor.DashboardView, investor.Investor{})
 	if !errors.Is(err, security.ErrForbidden) {
 		t.Fatalf("an empty subject was authorized: got %v, want ErrForbidden", err)
 	}
@@ -120,15 +171,34 @@ func TestTheServiceRefusesBeforeReachingTheModel(t *testing.T) {
 	// authorization.
 	service := investor.NewInvestorService(nil)
 	ctx := context.Background()
+	guest := security.Guest("acme")
 
-	if _, err := service.Find(ctx, administrator(), "record-1"); !errors.Is(err, security.ErrForbidden) {
+	if _, err := service.Find(ctx, signedIn(), "record-1"); !errors.Is(err, security.ErrForbidden) {
 		t.Fatalf("Find reached the Model before the policy refusal: %v", err)
 	}
-	if _, err := service.List(ctx, administrator(), data.Query{}); !errors.Is(err, security.ErrForbidden) {
+	if _, err := service.Mine(ctx, guest); !errors.Is(err, security.ErrForbidden) {
+		t.Fatalf("Mine reached the Model before the policy refusal: %v", err)
+	}
+	if _, err := service.List(ctx, signedIn(), data.Query{}); !errors.Is(err, security.ErrForbidden) {
 		t.Fatalf("List reached the Model before the policy refusal: %v", err)
 	}
-	if _, err := service.Create(ctx, administrator(), investor.CreateRequest{Name: "one"}); !errors.Is(err, security.ErrForbidden) {
+	if _, err := service.Create(ctx, signedIn(), validPerson()); !errors.Is(err, security.ErrForbidden) {
 		t.Fatalf("Create reached the Model before the policy refusal: %v", err)
+	}
+	if _, err := service.Update(ctx, signedIn(), "record-1", investor.UpdateRequest{Name: "Ana", Email: "ana@example.com"}); !errors.Is(err, security.ErrForbidden) {
+		t.Fatalf("Update reached the Model before the policy refusal: %v", err)
+	}
+	if _, err := service.SetActive(ctx, signedIn(), "record-1", false); !errors.Is(err, security.ErrForbidden) {
+		t.Fatalf("SetActive reached the Model before the policy refusal: %v", err)
+	}
+}
+
+// validPerson is a request every check passes: a well-formed CPF, a name and
+// an e-mail. Tests that want a refusal change one field of it.
+func validPerson() investor.CreateRequest {
+	return investor.CreateRequest{
+		UserID: "user-1", Kind: investor.Person, Document: "529.982.247-25",
+		Name: "Ana", Email: "ana@example.com",
 	}
 }
 
@@ -220,7 +290,7 @@ func TestInvestorsReturnsAWiredTenantScopedQuery(t *testing.T) {
 	// would go through the processor, which runs on no database here, and a key
 	// the model generated would replace the one the service wrote.
 	row.ID = "record-1"
-	if _, err := row.Save(ctx, security.SystemGrant(investor.InvestorCreate, "acme")); err != nil {
+	if _, err := row.Save(ctx, security.SystemGrant(investor.InvestorsManage, "acme")); err != nil {
 		t.Fatalf("saving through the recording handle: %v", err)
 	}
 	insert := handle.first(t, "insert")
@@ -232,7 +302,7 @@ func TestInvestorsReturnsAWiredTenantScopedQuery(t *testing.T) {
 	}
 
 	// And the tenant column scopes a read by the Grant's tenant.
-	if _, err := investor.Investors(handle).WhereKey("record-1").First(ctx, security.SystemGrant(investor.InvestorView, "acme")); err != nil {
+	if _, err := investor.Investors(handle).WhereKey("record-1").First(ctx, security.SystemGrant(investor.DashboardView, "acme")); err != nil {
 		t.Fatalf("reading through the recording handle: %v", err)
 	}
 	read := handle.first(t, "select")
@@ -259,7 +329,7 @@ func TestASystemGrantWithoutATenantReachesNothing(t *testing.T) {
 	// A system grant with no tenant names no customer. The Model refuses it
 	// while preparing the query, before the nil handle can issue a statement.
 	_, err := investor.Investors(nilHandle()).WhereKey("record-1").First(
-		context.Background(), security.SystemGrant(investor.InvestorView, ""))
+		context.Background(), security.SystemGrant(investor.DashboardView, ""))
 	if !errors.Is(err, model.ErrNoTenant) {
 		t.Fatalf("a system grant with no tenant returned %v, want ErrNoTenant", err)
 	}
@@ -268,7 +338,7 @@ func TestASystemGrantWithoutATenantReachesNothing(t *testing.T) {
 func TestTheTenantComesFromTheGrant(t *testing.T) {
 	t.Parallel()
 
-	g := security.SystemGrant(investor.InvestorView, "acme")
+	g := security.SystemGrant(investor.DashboardView, "acme")
 	if got := data.Tenant(g); got != "acme" {
 		t.Fatalf("data.Tenant(g) = %q, want %q", got, "acme")
 	}
@@ -287,11 +357,35 @@ func TestTheRequestValidatesItsInput(t *testing.T) {
 	if errs := (investor.CreateRequest{}).Validate(); !errs.Any() {
 		t.Fatal("an empty request validated")
 	}
-	if errs := (investor.CreateRequest{Name: strings.Repeat("a", 121)}).Validate(); !errs.Any() {
-		t.Fatal("a name past the maximum validated")
+	if errs := validPerson().Validate(); errs.Any() {
+		t.Fatalf("a valid person was rejected: %v", errs)
 	}
-	if errs := (investor.CreateRequest{Name: "one"}).Validate(); errs.Any() {
-		t.Fatalf("a valid request was rejected: %v", errs)
+
+	refused := map[string]func(*investor.CreateRequest){
+		"a CPF with a wrong check digit": func(r *investor.CreateRequest) { r.Document = "529.982.247-24" },
+		"a CNPJ for a person":            func(r *investor.CreateRequest) { r.Document = "11.222.333/0001-81" },
+		"a kind nobody declared":         func(r *investor.CreateRequest) { r.Kind = "trust" },
+		"a name past the maximum":        func(r *investor.CreateRequest) { r.Name = strings.Repeat("a", 161) },
+		"no e-mail":                      func(r *investor.CreateRequest) { r.Email = "" },
+		"no login user":                  func(r *investor.CreateRequest) { r.UserID = "" },
+	}
+	for name, change := range refused {
+		request := validPerson()
+		change(&request)
+		if errs := request.Validate(); !errs.Any() {
+			t.Errorf("%s validated", name)
+		}
+	}
+
+	company := validPerson()
+	company.Kind = investor.Company
+	company.Document = "11.222.333/0001-81"
+	if errs := company.Validate(); !errs.Has("legal_name", "legal_representative") {
+		t.Errorf("a company without its registered name and its representative validated: %v", errs)
+	}
+	company.LegalName, company.LegalRepresentative = "Ana Investimentos Ltda", "Ana"
+	if errs := company.Validate(); errs.Any() {
+		t.Errorf("a valid company was rejected: %v", errs)
 	}
 }
 

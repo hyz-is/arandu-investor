@@ -108,10 +108,24 @@ func (m *Module) Name() string { return "investor" }
 func (m *Module) Routes(r *fhttp.Router) {
 	r = r.Group("", middleware.RequireAuth(m.sessions))
 
-	r.Action(stdhttp.MethodGet, m.cfg.Prefix, m.index).Name("investor.index")
-	r.Action(stdhttp.MethodGet, m.cfg.Prefix+"/{id}", m.show).Name("investor.show")
-	r.Action(stdhttp.MethodPost, m.cfg.Prefix, m.store).Name("investor.store")
+	// The investor's own panel.
+	r.Action(stdhttp.MethodGet, m.cfg.Prefix+"/me", m.mine).Name("investor.me")
+
+	// The admin's registry. The policy decides who reaches it; the path only
+	// says what it is.
+	admin := m.cfg.Prefix + adminSegment
+	r.Action(stdhttp.MethodGet, admin+"/investors", m.index).Name("investor.admin.investors.index")
+	r.Action(stdhttp.MethodPost, admin+"/investors", m.store).Name("investor.admin.investors.store")
+	r.Action(stdhttp.MethodGet, admin+"/investors/{id}", m.show).Name("investor.admin.investors.show")
+	r.Action(stdhttp.MethodPut, admin+"/investors/{id}", m.update).Name("investor.admin.investors.update")
+	r.Action(stdhttp.MethodPost, admin+"/investors/{id}/suspension", m.suspend).Name("investor.admin.investors.suspend")
+	r.Action(stdhttp.MethodDelete, admin+"/investors/{id}/suspension", m.reactivate).Name("investor.admin.investors.reactivate")
 }
+
+// adminSegment is where the admin's routes sit under the prefix. One prefix for
+// the whole package, so an application mounts it once and every address moves
+// with it.
+const adminSegment = "/admin"
 
 // PublishCommand is what an application runs to take ownership of the views
 // this package offers.
@@ -231,9 +245,27 @@ func (m *Module) show(ctx *fhttp.Context) error {
 	return ctx.JSON(stdhttp.StatusOK, resourceFromPointer(record))
 }
 
-// store creates one record.
+// mine answers the investor whose login user is asking.
+func (m *Module) mine(ctx *fhttp.Context) error {
+	who, _ := ctx.User()
+	record, err := m.svc.Mine(ctx.Ctx(), who)
+	if err != nil {
+		return err
+	}
+	return ctx.JSON(stdhttp.StatusOK, resourceFromPointer(record))
+}
+
+// store registers one investor.
 func (m *Module) store(ctx *fhttp.Context) error {
-	in := CreateRequest{Name: ctx.Input("name")}
+	in := CreateRequest{
+		UserID:              ctx.Input("user_id"),
+		Kind:                PersonKind(ctx.Input("person_kind")),
+		Document:            ctx.Input("document"),
+		Name:                ctx.Input("name"),
+		LegalName:           ctx.Input("legal_name"),
+		LegalRepresentative: ctx.Input("legal_representative"),
+		Email:               ctx.Input("email"),
+	}
 
 	who, _ := ctx.User()
 	record, err := m.svc.Create(ctx.Ctx(), who, in)
@@ -241,6 +273,42 @@ func (m *Module) store(ctx *fhttp.Context) error {
 		return err
 	}
 	return ctx.JSON(stdhttp.StatusCreated, resourceFromPointer(record))
+}
+
+// update changes the names and the e-mail of one investor.
+func (m *Module) update(ctx *fhttp.Context) error {
+	in := UpdateRequest{
+		Name:                ctx.Input("name"),
+		LegalName:           ctx.Input("legal_name"),
+		LegalRepresentative: ctx.Input("legal_representative"),
+		Email:               ctx.Input("email"),
+	}
+	who, _ := ctx.User()
+	record, err := m.svc.Update(ctx.Ctx(), who, ctx.Param("id"), in)
+	if err != nil {
+		return err
+	}
+	return ctx.JSON(stdhttp.StatusOK, resourceFromPointer(record))
+}
+
+// suspend leaves one investor out of the closings that follow.
+func (m *Module) suspend(ctx *fhttp.Context) error {
+	who, _ := ctx.User()
+	record, err := m.svc.SetActive(ctx.Ctx(), who, ctx.Param("id"), false)
+	if err != nil {
+		return err
+	}
+	return ctx.JSON(stdhttp.StatusOK, resourceFromPointer(record))
+}
+
+// reactivate brings one suspended investor back.
+func (m *Module) reactivate(ctx *fhttp.Context) error {
+	who, _ := ctx.User()
+	record, err := m.svc.SetActive(ctx.Ctx(), who, ctx.Param("id"), true)
+	if err != nil {
+		return err
+	}
+	return ctx.JSON(stdhttp.StatusOK, resourceFromPointer(record))
 }
 
 // Migrations declares the schema this module owns.
@@ -263,7 +331,7 @@ type createInvestors struct{ migrations.BaseMigration }
 // GetName is the migration's identity, and it carries the order. It is fixed
 // once the package is published: changing what an applied name means leaves the
 // change missing everywhere it already ran, and nothing says so.
-func (createInvestors) GetName() string { return "20260823_0001_create_investors" }
+func (createInvestors) GetName() string { return "20261012_0001_create_investors" }
 
 // Up creates the table and the index the keyset pagination scans.
 //
@@ -277,11 +345,25 @@ func (createInvestors) GetName() string { return "20260823_0001_create_investors
 //
 // The timestamp has no database default: the value comes from Go.
 func (createInvestors) Up(ctx context.Context, conn migrations.Connection) error {
-	return conn.Schema().Create(ctx, "investors", func(table *schema.Blueprint) {
-		table.String("id").Primary()
-		table.String("tenant_id")
-		table.String("name")
+	return conn.Schema().Create(ctx, investorsTable, func(table *schema.Blueprint) {
+		table.String("id", maxIdentifierLen).Primary()
+		table.String("tenant_id", maxIdentifierLen)
+		table.String("user_id", maxIdentifierLen)
+		table.String("person_kind", maxShortLen)
+		table.String("document", maxDocumentLen)
+		table.String("name", maxNameLen)
+		table.String("legal_name", maxNameLen).Default("")
+		table.String("legal_representative", maxNameLen).Default("")
+		table.String("email", maxEmailLen)
+		table.String("status", maxShortLen)
 		table.Timestamp("created_at")
+		table.Timestamp("updated_at")
+
+		// One investor per document and one per login user, per tenant. Unique
+		// indexes and not checks in Go, because a check in Go is a check two
+		// concurrent requests both pass.
+		table.Unique([]string{"tenant_id", "document"}, "investors_tenant_document_uq")
+		table.Unique([]string{"tenant_id", "user_id"}, "investors_tenant_user_uq")
 
 		// The index matches the ORDER BY of the listing, tenant first. Without
 		// it every page is a scan of every customer's rows.
@@ -289,7 +371,7 @@ func (createInvestors) Up(ctx context.Context, conn migrations.Connection) error
 	})
 }
 
-// Down drops the table, which takes its index with it.
+// Down drops the table, which takes its indexes with it.
 func (createInvestors) Down(ctx context.Context, conn migrations.Connection) error {
-	return conn.Schema().DropIfExists(ctx, "investors")
+	return conn.Schema().DropIfExists(ctx, investorsTable)
 }

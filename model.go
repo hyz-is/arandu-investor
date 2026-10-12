@@ -2,12 +2,16 @@ package investor
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/arandu-io/hesape/database/model"
+	br "github.com/hyz-is/arandu-br"
 )
 
-// Investor is the entity this package owns.
+// Investor is one angel investor of the application: a person (CPF) or a
+// company (CNPJ) the finance team registered, tied to the login user who reads
+// the statement.
 //
 // It embeds the model, so a row returned by a query carries the connection and
 // can be saved again. Build a new row with Investors(db).New(): a struct
@@ -28,12 +32,60 @@ type Investor struct {
 	// tenant.
 	TenantID string `db:"tenant_id"`
 
-	// Name is what a person calls this record.
+	// UserID is the login user who is this investor. The application owns what
+	// a user is; this package only compares the identifier with the subject's.
+	UserID string `db:"user_id"`
+
+	// Kind says whether the investor is a person or a company, which decides
+	// which document is valid and which names are required.
+	Kind PersonKind `db:"person_kind"`
+
+	// Document is the CPF of a person or the CNPJ of a company, digits only
+	// (and letters, for the alphanumeric CNPJ), never formatted.
+	Document string `db:"document"`
+
+	// Name is the person's name, or the company's trade name.
 	Name string `db:"name"`
+
+	// LegalName is the company's registered name. Empty for a person.
+	LegalName string `db:"legal_name"`
+
+	// LegalRepresentative is who signs for the company. Empty for a person.
+	LegalRepresentative string `db:"legal_representative"`
+
+	// Email is where the investor is reached about invoices and payments.
+	Email string `db:"email"`
+
+	// Status is whether the investor is active. A suspended investor keeps the
+	// history and earns nothing new.
+	Status InvestorStatus `db:"status"`
 
 	// CreatedAt is when the row was written, in UTC.
 	CreatedAt time.Time `db:"created_at"`
+
+	// UpdatedAt is when the row last changed, in UTC.
+	UpdatedAt time.Time `db:"updated_at"`
 }
+
+// PersonKind is whether an investor is a natural person or a company.
+type PersonKind string
+
+const (
+	// Person is a natural person, identified by a CPF.
+	Person PersonKind = "person"
+	// Company is a legal entity, identified by a CNPJ.
+	Company PersonKind = "company"
+)
+
+// InvestorStatus is whether an investor takes part in new closings.
+type InvestorStatus string
+
+const (
+	// InvestorActive takes part in every closing of its contracts.
+	InvestorActive InvestorStatus = "active"
+	// InvestorSuspended keeps its history and is left out of new closings.
+	InvestorSuspended InvestorStatus = "suspended"
+)
 
 // investorTable is the table Investor is a row of, declared once. Its query,
 // Investors, is generated beside it and is the one way to reach the rows.
@@ -42,32 +94,84 @@ type Investor struct {
 // database neither increments it nor fills it. The tenant scope is left at its
 // tenant_id default.
 var investorTable = model.NewTable(model.TableSpec{
-	Name:      "investors",
+	Name:      investorsTable,
 	New:       func() model.Entity { return new(Investor) },
 	ManualKey: true,
 })
 
 // arandu:begin custom
-// The rules of the entity itself go here: invariants, derived values and
-// transitions that change only the fields of this row, such as a CanX() bool
-// beside the X(...) error it guards. They are pure -- no database, no network,
-// no clock they read for themselves, no Grant -- so the time a transition
-// stamps arrives as a parameter. Orchestration stays in the service: it
-// validates the request, asks the policy, calls these rules and saves with the
-// Grant. A local scope is a method on *InvestorQuery in this block, and a
-// relation is registered on investorTable from an init function.
-//
-//	// CanRename reports whether the record may take this name.
-//	func (s Investor) CanRename(name string) bool { return name != "" && name != s.Name }
-//
-//	// Rename gives the record a new name, and refuses one it cannot take.
-//	func (s *Investor) Rename(name string) error {
-//		if !s.CanRename(name) {
-//			return fmt.Errorf("investor: %q cannot be the new name of this record", name)
-//		}
-//		s.Name = name
-//		return nil
-//	}
+
+// The table names, declared once: the migrations and the queries read them
+// from here, so a rename is one edit.
+const (
+	investorsTable        = "investors"
+	contractsTable        = "investor_contracts"
+	contractProductsTable = "investor_contract_products"
+	entriesTable          = "investor_entries"
+	costItemsTable        = "investor_cost_items"
+	costItemProductsTable = "investor_cost_item_products"
+	invoicesTable         = "investor_invoices"
+	invoiceEntriesTable   = "investor_invoice_entries"
+)
+
+// Column widths, declared once for the migrations and the validation, so a
+// value the form accepts is a value the column holds.
+const (
+	maxIdentifierLen = 64
+	maxNameLen       = 160
+	maxEmailLen      = 254
+	maxDocumentLen   = 14
+	maxShortLen      = 40
+	maxTextLen       = 1000
+)
+
+// normalizeDocument checks the document against the kind of investor and
+// returns it as it is stored: digits only for a CPF, digits and capital letters
+// for a CNPJ. The check digits are arandu-br's, so a document this package
+// accepts is one every other Arandu package accepts too.
+func normalizeDocument(kind PersonKind, document string) (string, error) {
+	switch kind {
+	case Person:
+		return br.ParseCPF(document)
+	case Company:
+		return br.ParseCNPJ(document)
+	default:
+		return "", fmt.Errorf("investor: %q is not a kind of investor; use %q or %q", kind, Person, Company)
+	}
+}
+
+// IsActive reports whether the investor takes part in new closings.
+func (i Investor) IsActive() bool { return i.Status == InvestorActive }
+
+// Suspend leaves the investor out of new closings, keeping the history.
+func (i *Investor) Suspend(now time.Time) error {
+	if i.Status == InvestorSuspended {
+		return fmt.Errorf("investor: %s is already suspended", i.ID)
+	}
+	i.Status = InvestorSuspended
+	i.UpdatedAt = now.UTC()
+	return nil
+}
+
+// Reactivate brings a suspended investor back into new closings.
+func (i *Investor) Reactivate(now time.Time) error {
+	if i.Status == InvestorActive {
+		return fmt.Errorf("investor: %s is already active", i.ID)
+	}
+	i.Status = InvestorActive
+	i.UpdatedAt = now.UTC()
+	return nil
+}
+
+// DisplayName is the name the screens print: the registered name of a company
+// when there is one, the person's name otherwise.
+func (i Investor) DisplayName() string {
+	if i.Kind == Company && strings.TrimSpace(i.LegalName) != "" {
+		return i.LegalName
+	}
+	return i.Name
+}
+
 // arandu:end custom
 
 // ErrNotFound is returned when no row matches, including when the row exists
@@ -84,33 +188,54 @@ var ErrNotFound = fmt.Errorf("investor: record not found: %w", model.ErrModelNot
 // adds later without ever opening the handler -- and TenantID is exactly such a
 // field: it names another customer's identifier and belongs in no response.
 type Resource struct {
-	id        string
-	name      string
-	createdAt time.Time
+	id                  string
+	userID              string
+	kind                PersonKind
+	document            string
+	name                string
+	legalName           string
+	legalRepresentative string
+	email               string
+	status              InvestorStatus
+	createdAt           time.Time
 }
 
 // NewResource snapshots one record for the response.
 func NewResource(record Investor) Resource {
-	return newResource(record.ID, record.Name, record.CreatedAt)
+	return Resource{
+		id:                  record.ID,
+		userID:              record.UserID,
+		kind:                record.Kind,
+		document:            record.Document,
+		name:                record.Name,
+		legalName:           record.LegalName,
+		legalRepresentative: record.LegalRepresentative,
+		email:               record.Email,
+		status:              record.Status,
+		createdAt:           record.CreatedAt,
+	}
 }
 
 func resourceFromPointer(record *Investor) Resource {
 	if record == nil {
 		return Resource{}
 	}
-	return newResource(record.ID, record.Name, record.CreatedAt)
-}
-
-func newResource(id, name string, createdAt time.Time) Resource {
-	return Resource{id: id, name: name, createdAt: createdAt}
+	return NewResource(*record)
 }
 
 // ToArray returns the fields that may leave, by name.
 func (r Resource) ToArray() map[string]any {
 	return map[string]any{
-		"id":         r.id,
-		"name":       r.name,
-		"created_at": r.createdAt.UTC().Format(time.RFC3339),
+		"id":                   r.id,
+		"user_id":              r.userID,
+		"person_kind":          string(r.kind),
+		"document":             r.document,
+		"name":                 r.name,
+		"legal_name":           r.legalName,
+		"legal_representative": r.legalRepresentative,
+		"email":                r.email,
+		"status":               string(r.status),
+		"created_at":           r.createdAt.UTC().Format(time.RFC3339),
 	}
 }
 

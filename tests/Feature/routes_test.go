@@ -115,15 +115,28 @@ func (m mounted) answer(t *testing.T, method, target, body string, cookies ...*h
 // everyRoute is a request to each route the module registers, under the
 // default prefix. TestTheModuleRegistersItsRoutesUnderItsPrefix fails when a
 // route exists that this list does not reach.
+//
+// ownRow marks the routes whose policy answers the probe for any signed-in
+// subject and decides on the row instead: the investor's own panel reads the
+// row of the user who is asking, so there is no refusal to give before reading.
 var everyRoute = []struct {
 	method string
 	target string
 	body   string
+	ownRow bool
 }{
-	{http.MethodGet, investor.DefaultPrefix, ""},
-	{http.MethodGet, investor.DefaultPrefix + "/record-1", ""},
-	{http.MethodPost, investor.DefaultPrefix, "name=one"},
+	{http.MethodGet, investor.DefaultPrefix + "/me", "", true},
+	{http.MethodGet, investor.DefaultPrefix + "/admin/investors", "", false},
+	{http.MethodPost, investor.DefaultPrefix + "/admin/investors", validPersonForm, false},
+	{http.MethodGet, investor.DefaultPrefix + "/admin/investors/record-1", "", false},
+	{http.MethodPut, investor.DefaultPrefix + "/admin/investors/record-1", "name=Ana&email=ana%40example.com", false},
+	{http.MethodPost, investor.DefaultPrefix + "/admin/investors/record-1/suspension", "", false},
+	{http.MethodDelete, investor.DefaultPrefix + "/admin/investors/record-1/suspension", "", false},
 }
+
+// validPersonForm is a registration every check passes, so a refusal of it is
+// the policy's and not the validation's.
+const validPersonForm = "user_id=user-2&person_kind=person&document=529.982.247-25&name=Ana&email=ana%40example.com"
 
 func TestAVisitorWithNoSessionIsSentToSignIn(t *testing.T) {
 	t.Parallel()
@@ -154,6 +167,9 @@ func TestASignedInSubjectReachesThePolicyAndIsRefused(t *testing.T) {
 	// router turns that refusal into 403 -- before any statement, which the
 	// handle over no database would have panicked on.
 	for _, request := range everyRoute {
+		if request.ownRow {
+			continue
+		}
 		rec := m.answer(t, request.method, request.target, request.body, cookies...)
 		if rec.Code != http.StatusForbidden {
 			t.Errorf("%s %s answered %d for a signed-in administrator, want %d",
@@ -172,7 +188,7 @@ func TestARejectedInputGoesBackBeforeTheDatabase(t *testing.T) {
 	// comes from the request and not from the policy. The router answers it the
 	// way it answers every rejected form: back where it came from, with the
 	// messages in the flash -- and it still never reaches a statement.
-	rec := m.answer(t, http.MethodPost, investor.DefaultPrefix, "name=", cookies...)
+	rec := m.answer(t, http.MethodPost, investor.DefaultPrefix+"/admin/investors", "person_kind=person&document=1&name=", cookies...)
 	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/" {
 		t.Fatalf("an empty name answered %d to %q, want %d back to /", rec.Code, rec.Header().Get("Location"), http.StatusSeeOther)
 	}
@@ -212,7 +228,7 @@ func TestTheModuleRegistersItsRoutesUnderItsPrefix(t *testing.T) {
 
 	m := mount(t, investor.Config{Prefix: "/widgets"})
 
-	got := make([]string, 0, 3)
+	got := make([]string, 0, len(everyRoute))
 	for _, route := range m.router.Routes() {
 		if route.Module != "investor" {
 			t.Errorf("the route %s %s is not tagged with the module name: %q", route.Method, route.Pattern, route.Module)
@@ -221,7 +237,15 @@ func TestTheModuleRegistersItsRoutesUnderItsPrefix(t *testing.T) {
 	}
 	sort.Strings(got)
 
-	want := []string{"GET /widgets", "GET /widgets/{id}", "POST /widgets"}
+	want := []string{
+		"DELETE /widgets/admin/investors/{id}/suspension",
+		"GET /widgets/admin/investors",
+		"GET /widgets/admin/investors/{id}",
+		"GET /widgets/me",
+		"POST /widgets/admin/investors",
+		"POST /widgets/admin/investors/{id}/suspension",
+		"PUT /widgets/admin/investors/{id}",
+	}
 	if len(got) != len(want) || len(got) != len(everyRoute) {
 		t.Fatalf("registered %v, want %v, and everyRoute reaches %d of them", got, want, len(everyRoute))
 	}

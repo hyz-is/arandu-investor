@@ -76,9 +76,9 @@ func validateRoutePrefix(prefix string) (err error) {
 
 	handler := http.NotFoundHandler()
 	mux := http.NewServeMux()
-	mux.Handle(http.MethodGet+" "+prefix, handler)
-	mux.Handle(http.MethodGet+" "+prefix+"/{id}", handler)
-	mux.Handle(http.MethodPost+" "+prefix, handler)
+	mux.Handle(http.MethodGet+" "+prefix+"/me", handler)
+	mux.Handle(http.MethodGet+" "+prefix+"/admin/investors", handler)
+	mux.Handle(http.MethodGet+" "+prefix+"/admin/investors/{id}", handler)
 	return nil
 }
 
