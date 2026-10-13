@@ -88,6 +88,7 @@ func (s *InvestorService) WithdrawInvoice(ctx context.Context, actor security.Su
 		Amount:         cents(invoice.Amount),
 		AccountID:      accountID,
 		Reference:      "investor:invoice:" + invoice.ID,
+		Via:            PayoutVia,
 	})
 	if err != nil {
 		return nil, err

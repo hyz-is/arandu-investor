@@ -44,11 +44,11 @@ income tax is withheld.
 
 ## Install
 
-It needs arandu-wallet v0.12.0 or newer, which brings the withdrawal requests
-an investor is paid through:
+It needs arandu-wallet v0.13.0 or newer, which brings the withdrawal requests
+an investor is paid through and takes them only through this package:
 
 ```bash
-go get github.com/hyz-is/arandu-wallet@v0.12.0
+go get github.com/hyz-is/arandu-wallet@v0.13.0
 go get github.com/hyz-is/arandu-investor
 ```
 
@@ -147,7 +147,9 @@ A contract that fails to close does not stop the others: it is reported in
 
 The investor declares a PIX key on their panel — always in the name and
 document of their registration — and asks for an invoice. arandu-wallet holds
-the amount. The admin, on the withdrawals screen, takes the request, makes the
+the amount. The wallet is opened with `PayoutVia: "investor"`, so a request
+that does not come through this package — the wallet's own route — is refused,
+and no part of an invoice leaves around these rules. The admin, on the withdrawals screen, takes the request, makes the
 PIX outside the system, and records the end-to-end identifier with the receipt
 attached; or rejects it with a reason, and the invoice can be asked for again.
 The investor downloads the receipt from their panel.

@@ -18,6 +18,11 @@ import (
 // there and every withdrawal of one is paid out of it.
 const WalletSlug = "investor"
 
+// PayoutVia is the name this package asks for its investors' withdrawals
+// under, and the one their wallets are opened with: arandu-wallet refuses a
+// request for those wallets that does not carry it.
+const PayoutVia = "investor"
+
 // periodEndFor is the last billing day on or before asOf: the exclusive end of
 // the period a closing on asOf closes. The billing day itself belongs to the
 // period that starts on it.
@@ -325,8 +330,9 @@ func (s *InvestorService) deposit(ctx context.Context, actor security.Subject, o
 			Currency:      "BRL",
 			DecimalPlaces: 2,
 			// The money leaves only through a withdrawal request an operator
-			// pays, never through the investor's own hand on the ledger.
-			PayoutByRequest: true,
+			// pays, and only one this package asked for: the wallet's own
+			// route cannot take a part of an invoice past these rules.
+			PayoutVia: PayoutVia,
 		})
 	}
 	if err != nil {

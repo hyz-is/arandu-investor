@@ -10,6 +10,21 @@ a release is corrected by another release and never by moving a tag.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-13
+
+### Fixed
+
+- An investor could ask arandu-wallet's own route for a withdrawal of any
+  part of their wallet, around the rule that an invoice is withdrawn whole and
+  around the invoice's record of it. The investor's wallet is now opened with
+  `PayoutVia: "investor"` (arandu-wallet v0.13.0), and this package asks with
+  the same name, so the wallet refuses every request that did not come through
+  `WithdrawInvoice`. `PayoutVia` is exported.
+
+### Changed
+
+- Requires arandu-wallet v0.13.0.
+
 ## [0.1.0] - 2026-10-12
 
 The first release: angel-investor revenue sharing over arandu-wallet.

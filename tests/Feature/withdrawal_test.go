@@ -42,6 +42,14 @@ func TestAnInvoiceIsWithdrawnWholeThroughTheWallet(t *testing.T) {
 		t.Fatalf("declaring the account: %v", err)
 	}
 
+	// Nor around this package, by asking the wallet for a part of the
+	// invoice: the wallet takes requests for it only through this package.
+	if _, err := w.wallets.RequestWithdrawal(ctx, user("user-ana"), wallet.WithdrawalRequestInput{
+		IdempotencyKey: "around", WalletID: wl.ID, Amount: "1.00", AccountID: account.ID,
+	}); !errors.Is(err, wallet.ErrWithdrawalElsewhere) {
+		t.Fatalf("the investor asked the wallet directly: %v", err)
+	}
+
 	view, err := w.svc.WithdrawInvoice(ctx, user("user-ana"), invoice.ID, account.ID)
 	if err != nil {
 		t.Fatalf("asking for the invoice: %v", err)
