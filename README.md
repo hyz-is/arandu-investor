@@ -258,6 +258,19 @@ method, which the unit suite audits. Handlers never hold the database or start
 a query. Every query starts at `Investors(s.db)` or its sibling and reads the
 tenant from the Grant through `data.Tenant(g)`.
 
+## Example
+
+```bash
+go run -tags example ./example
+```
+
+It opens SQLite in a temporary directory, migrates arandu-wallet and this
+package, and runs one investor through a whole period: the contract with its
+PDF, a sale and a renewal with the gateway's fee, a monthly cost, the closing
+on the billing day, and the withdrawal of the invoice by PIX with the receipt.
+It leaves nothing behind. The build tag is there so that installing this
+package never compiles it.
+
 ## Tests
 
 ```bash
