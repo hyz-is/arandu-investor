@@ -4,14 +4,14 @@ go 1.26.0
 
 require (
 	github.com/arandu-io/framework v0.56.0
-	github.com/arandu-io/hesape v0.54.1
+	github.com/arandu-io/hesape v0.58.0
 	github.com/arandu-io/hesape/database/connectors/sqlite v0.11.0
+	github.com/arandu-io/kyse v0.35.0
 	github.com/hyz-is/arandu-br v0.2.0
-	github.com/hyz-is/arandu-wallet v0.13.0
+	github.com/hyz-is/arandu-wallet v0.14.0
 )
 
 require (
-	github.com/arandu-io/kyse v0.35.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
