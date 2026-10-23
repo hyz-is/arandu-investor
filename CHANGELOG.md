@@ -10,6 +10,55 @@ a release is corrected by another release and never by moving a tag.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-23
+
+### Added
+
+- `Config.Locale`: the language every screen, validation message, report and
+  activity description is written in, whatever the request negotiated
+  (`"pt-BR"`). Empty follows `translation.Middleware` or
+  `translation.InLocale`, then English.
+- `Config.TitleSeparator`: the document title joins the screen's title to the
+  application's `APP_NAME` the request carries ("Saques dos investidores —
+  Alpr.sh"). `ChromeRequest.Title` stays the screen's own title.
+- Validation messages in the request's language. Every route draws the
+  messages of `validation.Errors` -- this package's, the framework helpers'
+  ("is required") and arandu-wallet's -- again from the new `validation` group
+  of the catalogue before the router answers them. `Labels.Message`,
+  `Labels.Errors`, `Labels.Summary`, `Labels.Field`, `Labels.Month` and
+  `Lines` for an application that calls the service itself.
+- The error banner (`Screen.All`, `Screen.ErrorSummary`) names each field by
+  its label in the catalogue: "Chave PIX: Preencha este campo.".
+- The reports read the catalogue (`report` and `month` groups), and so do
+  their file names; `Screen.SearchLabel` names every table's search box
+  ("Buscar em Extrato"), and the search boxes say `control.search_placeholder`
+  ("Buscar…").
+- `DashboardPageData.ReportMonths` and `ReportYears`, `ReportLink`: the panel
+  offers a monthly report only from the month the investor's first contract
+  started (the latest 12) and an income report only from that year on; none
+  before a contract exists (`screen.reports_empty`).
+- `ContractRow.Period`: the contract's period, "20/09/2026 — em aberto" for a
+  contract with no end; `ContractRow.Ends` reads `screen.open_ended` instead
+  of a dash.
+- A complete pt-BR catalogue, with tests that every locale has every key, that
+  no pt-BR line is left in English, and that every message the code writes has
+  a line.
+
+### Changed
+
+- `FallbackLocale` is `"en"`, as in the other hyz-is modules: a request that
+  negotiated no locale is answered in English unless `Config.Locale` says
+  otherwise. It was `"pt-BR"`.
+- The investor's panel titles itself with `screen.dashboard_title`; the
+  investor's name and document moved to the line above it.
+- The statement's filters are a grid: one column on a phone, two on a tablet,
+  one row on a desktop, every input on the same baseline. The card is a flex
+  column in Basecoat, which pushed them to its right.
+- Suspending a suspended investor, or reactivating an active one, answers
+  "is already suspended" / "is already active" under `status`, without the
+  identifier the model's error carried; reversing a reversal answers
+  "is itself a reversal; record the original again instead" under `entry`.
+
 ## [0.2.0] - 2026-10-23
 
 ### Fixed

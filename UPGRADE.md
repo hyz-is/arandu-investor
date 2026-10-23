@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+## v0.3.0
+
+`go get github.com/hyz-is/arandu-investor@v0.3.0`, then republish the views
+with `aru vendor:publish --tag=view --apply` and run `aru view:build`: the
+dashboard, the statement and every table with a search box changed. Merge the
+new markup into views you edited (`.ReportMonths`, `.ReportYears`, `c.Period`,
+`SearchLabel: data.SearchLabel(...)`, the statement's filter grid).
+
+- `FallbackLocale` changed value from `"pt-BR"` to `"en"`. An application that
+  relied on the screens being in Portuguese without saying so sets
+  `Config.Locale: "pt-BR"`; one that negotiates the locale per request keeps
+  working as it did.
+- To title the screens "Título — <APP_NAME>", set `Config.TitleSeparator`
+  (`" — "`). The name is the one the Application puts on the request; nothing
+  else is configured.
+- Nothing else is incompatible: route names, addresses and tables are
+  v0.2.0's. English validation messages are unchanged, except the two
+  `status` messages and the `entry` message named in the changelog, which no
+  longer carry an identifier.
+
 ## v0.2.0
 
 Require Framework v0.62.1 and Hesape v0.78.0 (`go get` them with this

@@ -50,7 +50,7 @@ func contractsTable(data InvestorData) components.DataTableProps {
 			{Text: c.Share},
 			{Text: c.Products},
 			{Text: strconv.Itoa(c.BillingDay)},
-			{Text: c.Starts + " — " + c.Ends},
+			{Text: c.Period},
 			{HTML: components.Badge(components.BadgeProps{Label: c.Status, Variant: badgeFor(status)})},
 			{HTML: template.HTML(links)},
 			{HTML: close},

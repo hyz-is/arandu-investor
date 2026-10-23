@@ -46,6 +46,7 @@ func entriesTable(data EntriesData) components.DataTableProps {
 		Caption: data.Labels.T("screen.admin_books_lead"), ColumnsLabel: data.Labels.T("control.columns"),
 		Lines: data.TableLines(),
 		Query: data.Query, SearchName: "q", SearchPlaceholder: data.Labels.T("screen.books_search"),
+		SearchLabel: data.SearchLabel(data.Labels.T("screen.admin_books_title")),
 		Filters: []components.DataTableFilter{{Key: "kind", Label: data.Labels.T("field.kind"), Options: data.KindOptions(), Selected: selected}},
 		SortKey: data.Sort, SortDir: data.Dir,
 		Page: data.CurrentPage, Pages: data.Pages, Total: data.Total,

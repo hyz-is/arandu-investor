@@ -105,9 +105,14 @@ func contractRows(u URLs, l Labels, list []ContractResource) []ContractRow {
 		if !bool(c.AllProducts) {
 			products = strings.Join(r.Products(), ", ")
 		}
+		ends := dayText(c.EndsOn)
+		if c.EndsOn.IsZero() {
+			ends = l.T("screen.open_ended")
+		}
 		row := ContractRow{
 			ID: c.ID, Number: c.Number, Share: percentText(c.ShareBps), Products: products,
-			Status: l.T("status." + string(c.Status)), Starts: dayText(c.StartsOn), Ends: dayText(c.EndsOn),
+			Status: l.T("status." + string(c.Status)), Starts: dayText(c.StartsOn), Ends: ends,
+			Period:  dayText(c.StartsOn) + " — " + ends,
 			Version: c.Version, BillingDay: c.BillingDay, Active: c.Status == ContractActive,
 			StatementURL:  u.Statement(c.ID),
 			ProjectionURL: u.Projection(c.ID),
@@ -120,6 +125,52 @@ func contractRows(u URLs, l Labels, list []ContractResource) []ContractRow {
 		rows = append(rows, row)
 	}
 	return rows
+}
+
+// ReportLink is one report a screen offers: its label and its address.
+type ReportLink struct{ Label, URL string }
+
+// maxReportMonths is how many months back the panel offers a monthly report.
+const maxReportMonths = 12
+
+// reportLinks are the reports an investor can download: a month's from the
+// month their first contract started up to this one, the latest
+// maxReportMonths of them, newest first; and the income report of every year
+// from that one to this. An investor with no contract, or one that starts
+// later, is offered none: a report of a month before the money came in is a
+// report of nothing.
+func reportLinks(base string, contracts []ContractResource, now time.Time) (months, years []ReportLink) {
+	var since Day
+	for _, r := range contracts {
+		if start := r.Contract().StartsOn; !start.IsZero() && (since.IsZero() || start.Before(since)) {
+			since = start
+		}
+	}
+	if since.IsZero() {
+		return nil, nil
+	}
+	first := since.Time()
+	year, month := now.Year(), int(now.Month())
+	for len(months) < maxReportMonths && (year > first.Year() || year == first.Year() && month >= int(first.Month())) {
+		months = append(months, ReportLink{
+			Label: fmt.Sprintf("%02d/%d", month, year),
+			URL:   base + "/" + strconv.Itoa(year) + "/" + strconv.Itoa(month),
+		})
+		month--
+		if month == 0 {
+			month, year = 12, year-1
+		}
+	}
+	for y := now.Year(); y >= first.Year(); y-- {
+		years = append(years, ReportLink{Label: strconv.Itoa(y), URL: base + "/" + strconv.Itoa(y)})
+	}
+	return months, years
+}
+
+// SearchLabel is the name a screen reader gives a table's search box:
+// "Buscar em Extrato".
+func (s Screen) SearchLabel(table string) string {
+	return s.Labels.line("control.search_label", map[string]any{"label": table})
 }
 
 // invoiceRows are an investor's invoices, as the panel and the admin show them.

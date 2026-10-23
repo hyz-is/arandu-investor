@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/arandu-io/framework/security"
+	"github.com/arandu-io/hesape/translation"
 
 	investor "github.com/hyz-is/arandu-investor"
 )
@@ -75,8 +76,29 @@ func TestTheReportsAreSpreadsheetsWithTheInvoicesInThem(t *testing.T) {
 			t.Errorf("the %s report does not name the investor's CPF", name)
 		}
 	}
-	if !strings.Contains(readWorkbook(t, annual.Bytes()), "Imposto retido") {
-		t.Error("the income report has no withheld-tax column")
+	if !strings.Contains(readWorkbook(t, annual.Bytes()), "Tax withheld") {
+		t.Error("the income report, in the default locale, has no withheld-tax column")
+	}
+
+	// A request in Brazilian Portuguese gets the informe de rendimentos the
+	// Receita Federal lays out, in its words.
+	var monthlyBR, annualBR bytes.Buffer
+	inBR := translation.WithLocale(ctx, "pt-BR")
+	if err := w.svc.MonthlyReport(inBR, user("user-ana"), ana.ID, 2026, 10, &monthlyBR); err != nil {
+		t.Fatalf("the monthly report in pt-BR: %v", err)
+	}
+	if err := w.svc.AnnualReport(inBR, user("user-ana"), ana.ID, 2026, &annualBR); err != nil {
+		t.Fatalf("the annual report in pt-BR: %v", err)
+	}
+	for _, want := range []string{"Relatório mensal — outubro de 2026", "Faturamento", "Custo rateado", "Venda", "Total do mês"} {
+		if !strings.Contains(readWorkbook(t, monthlyBR.Bytes()), want) {
+			t.Errorf("the monthly report in pt-BR does not say %q", want)
+		}
+	}
+	for _, want := range []string{"Comprovante de rendimentos — ano-calendário 2026", "1. Fonte pagadora", "Imposto retido", "outubro"} {
+		if !strings.Contains(readWorkbook(t, annualBR.Bytes()), want) {
+			t.Errorf("the income report in pt-BR does not say %q", want)
+		}
 	}
 
 	if err := w.svc.AnnualReport(ctx, user("user-bruno"), ana.ID, 2026, io.Discard); !errors.Is(err, security.ErrForbidden) {

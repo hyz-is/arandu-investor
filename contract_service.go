@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"path"
+	"strconv"
 	"strings"
 
 	"github.com/arandu-io/framework/data"
@@ -15,6 +16,7 @@ import (
 	"github.com/arandu-io/framework/validation"
 	"github.com/arandu-io/hesape/database"
 	"github.com/arandu-io/hesape/filesystem"
+	"github.com/arandu-io/hesape/translation"
 )
 
 // MaxContractBytes is the largest signed file accepted. A scanned contract of
@@ -52,38 +54,38 @@ func (r ContractRequest) Validate() validation.Errors {
 	validation.MaxLen(e, "number", r.Number, maxShortLen)
 	signed, err := ParseDay(r.SignedOn)
 	if err != nil || signed.IsZero() {
-		e.Add("signed_on", "must be a day in the form "+DayLayout)
+		e.Add("signed_on", message("day", dayLayout))
 	}
 	starts, err := ParseDay(r.StartsOn)
 	if err != nil || starts.IsZero() {
-		e.Add("starts_on", "must be a day in the form "+DayLayout)
+		e.Add("starts_on", message("day", dayLayout))
 	}
 	ends, err := ParseDay(r.EndsOn)
 	if err != nil {
-		e.Add("ends_on", "must be a day in the form "+DayLayout+", or empty")
+		e.Add("ends_on", message("day_or_empty", dayLayout))
 	} else if !ends.IsZero() && !starts.IsZero() && ends.Before(starts) {
-		e.Add("ends_on", "must not be before the start")
+		e.Add("ends_on", message("not_before_start"))
 	}
 	if r.ShareBps <= 0 || r.ShareBps > 10000 {
-		e.Add("share_bps", "must be between 1 and 10000 basis points (0.01% to 100%)")
+		e.Add("share_bps", message("share_range"))
 	}
 	// Up to the 28th, so every month has the day: a contract that closed on the
 	// 31st would have no closing day in February.
 	if r.BillingDay < 1 || r.BillingDay > 28 {
-		e.Add("billing_day", "must be between 1 and 28")
+		e.Add("billing_day", message("billing_day"))
 	}
 	if !r.AllProducts && len(cleanProducts(r.Products)) == 0 {
-		e.Add("products", "name at least one product, or cover the whole application")
+		e.Add("products", message("contract_products"))
 	}
 	for _, product := range cleanProducts(r.Products) {
 		if len(product) > maxIdentifierLen {
-			e.Add("products", fmt.Sprintf("%q is longer than %d characters", product, maxIdentifierLen))
+			e.Add("products", message("product_too_long", translation.Replace{"product": strconv.Quote(product), "max": maxIdentifierLen}))
 		}
 	}
 	validation.Required(e, "file_name", r.FileName)
 	validation.MaxLen(e, "file_name", r.FileName, maxNameLen)
 	if _, ok := contractTypes[r.FileType]; !ok {
-		e.Add("file", "must be a PDF, a JPEG or a PNG")
+		e.Add("file", message("file_type"))
 	}
 	return e
 }
@@ -109,17 +111,17 @@ func cleanProducts(products []string) []string {
 // returns it with its digest.
 func readContractFile(file io.Reader) ([]byte, string, error) {
 	if file == nil {
-		return nil, "", validation.Errors{"file": {"is required"}}
+		return nil, "", validation.Errors{"file": {message("required")}}
 	}
 	body, err := io.ReadAll(io.LimitReader(file, MaxContractBytes+1))
 	if err != nil {
 		return nil, "", err
 	}
 	if len(body) == 0 {
-		return nil, "", validation.Errors{"file": {"is empty"}}
+		return nil, "", validation.Errors{"file": {message("file_empty")}}
 	}
 	if len(body) > MaxContractBytes {
-		return nil, "", validation.Errors{"file": {fmt.Sprintf("is larger than %d MB", MaxContractBytes>>20)}}
+		return nil, "", validation.Errors{"file": {message("file_too_large", translation.Replace{"mb": MaxContractBytes >> 20})}}
 	}
 	sum := sha256.Sum256(body)
 	return body, hex.EncodeToString(sum[:]), nil
@@ -192,7 +194,7 @@ func (s *InvestorService) AmendContract(ctx context.Context, actor security.Subj
 		return nil, err
 	}
 	if current == nil {
-		return nil, validation.Errors{"contract": {"has no version in force to amend"}}
+		return nil, validation.Errors{"contract": {message("no_version_to_amend")}}
 	}
 	contract, err := s.writeContract(ctx, actor, g, owner, current, in, file)
 	if err != nil {

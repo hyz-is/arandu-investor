@@ -47,7 +47,7 @@ var ErrNotWithdrawable = errors.New("investor: this invoice cannot be withdrawn 
 // ask on an investor's behalf.
 func (s *InvestorService) WithdrawInvoice(ctx context.Context, actor security.Subject, invoiceID, accountID string) (*InvoiceView, error) {
 	if accountID == "" {
-		return nil, validation.Errors{"account_id": {"choose the account to be paid into"}}
+		return nil, validation.Errors{"account_id": {message("account_required")}}
 	}
 	g, err := security.Authorize(ctx, s.policy, actor, ReportsView, Investor{})
 	if err != nil {

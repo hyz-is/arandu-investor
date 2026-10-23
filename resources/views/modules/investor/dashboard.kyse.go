@@ -47,7 +47,7 @@ func dashboardContracts(data DashboardData) components.DataTableProps {
 			{Text: c.Share},
 			{Text: c.Products},
 			{Text: strconv.Itoa(c.BillingDay), SortValue: strconv.Itoa(100 + c.BillingDay)},
-			{Text: c.Starts + " — " + c.Ends},
+			{Text: c.Period},
 			{HTML: components.Badge(components.BadgeProps{Label: c.Status, Variant: variant})},
 			{HTML: template.HTML(links)},
 		}})
@@ -171,37 +171,6 @@ func hasWithdrawable(data DashboardData) bool {
 	}
 	return false
 }
-
-func reportMonths(data DashboardData) []components.LinkProps {
-	out := make([]components.LinkProps, 0, 12)
-	year, month := data.Year, data.Month
-	for range 12 {
-		out = append(out, components.LinkProps{
-			Label: twoDigits(month) + "/" + strconv.Itoa(year),
-			URL:   data.ReportsURL + "/" + strconv.Itoa(year) + "/" + strconv.Itoa(month),
-		})
-		month--
-		if month == 0 {
-			month, year = 12, year-1
-		}
-	}
-	return out
-}
-
-func reportYears(data DashboardData) []components.LinkProps {
-	out := make([]components.LinkProps, 0, 3)
-	for year := data.Year; year > data.Year-3; year-- {
-		out = append(out, components.LinkProps{Label: strconv.Itoa(year), URL: data.ReportsURL + "/" + strconv.Itoa(year)})
-	}
-	return out
-}
-
-func twoDigits(n int) string {
-	if n < 10 {
-		return "0" + strconv.Itoa(n)
-	}
-	return strconv.Itoa(n)
-}
 @endgo
 
 @extends('layouts.app')
@@ -210,9 +179,8 @@ func twoDigits(n int) string {
 <section class="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
 	<header class="flex flex-wrap items-end justify-between gap-4">
 		<div>
-			<p class="text-muted-foreground text-xs font-medium uppercase tracking-wide">{{ .Labels.T("noun.investor") }}</p>
-			<h1 class="mt-1 text-2xl font-semibold tracking-tight">{{ .Investor }}</h1>
-			<p class="text-muted-foreground mt-1 font-mono text-xs">{{ .Document }}</p>
+			<p class="text-muted-foreground text-xs font-medium uppercase tracking-wide">{{ .Labels.T("noun.investor") }} · {{ .Investor }} · <span class="font-mono">{{ .Document }}</span></p>
+			<h1 class="mt-1 text-2xl font-semibold tracking-tight">{{ .Labels.T("screen.dashboard_title") }}</h1>
 		</div>
 		<p class="text-muted-foreground max-w-prose text-sm">{{ .Labels.T("screen.dashboard_lead") }}</p>
 	</header>
@@ -303,20 +271,28 @@ func twoDigits(n int) string {
 	<div class="mt-10 grid gap-6 md:grid-cols-2">
 		<div class="card p-5">
 			<h2 class="text-base font-semibold">{{ .Labels.T("screen.monthly_report") }}</h2>
-			<ul class="mt-3 flex flex-wrap gap-2">
-			@foreach(reportMonths(.) as month)
-				<li><a class="btn" data-variant="outline" data-size="sm" href="{{ month.URL }}">{{ month.Label }}</a></li>
-			@endforeach
-			</ul>
+			@if(len(.ReportMonths) == 0)
+				<p class="text-muted-foreground mt-3 text-sm">{{ .Labels.T("screen.reports_empty") }}</p>
+			@else
+				<ul class="mt-3 flex flex-wrap gap-2">
+				@foreach(.ReportMonths as month)
+					<li><a class="btn" data-variant="outline" data-size="sm" href="{{ month.URL }}">{{ month.Label }}</a></li>
+				@endforeach
+				</ul>
+			@endif
 		</div>
 		<div class="card p-5">
 			<h2 class="text-base font-semibold">{{ .Labels.T("screen.annual_report") }}</h2>
 			<p class="text-muted-foreground mt-1 text-sm">{{ .Labels.T("screen.annual_lead") }}</p>
-			<div class="mt-3 flex flex-wrap gap-2">
-				@foreach(reportYears(.) as year)
-					<a class="btn" data-variant="outline" data-size="sm" href="{{ year.URL }}">{{ year.Label }}</a>
-				@endforeach
-			</div>
+			@if(len(.ReportYears) == 0)
+				<p class="text-muted-foreground mt-3 text-sm">{{ .Labels.T("screen.reports_empty") }}</p>
+			@else
+				<div class="mt-3 flex flex-wrap gap-2">
+					@foreach(.ReportYears as year)
+						<a class="btn" data-variant="outline" data-size="sm" href="{{ year.URL }}">{{ year.Label }}</a>
+					@endforeach
+				</div>
+			@endif
 		</div>
 	</div>
 </section>

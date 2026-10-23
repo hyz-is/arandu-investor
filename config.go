@@ -79,6 +79,24 @@ type Config struct {
 	// package ships, key by key: "investor.screen.dashboard_title". Optional.
 	Translator *translation.Translator
 
+	// Locale is the language every screen, validation message, report and
+	// activity description of this package is written in, whatever the
+	// request negotiated: "pt-BR" for an application that speaks Brazilian
+	// Portuguese and nothing else. Empty means the locale translation.Middleware
+	// or translation.InLocale put on the request, and FallbackLocale (English)
+	// when there is none. The package ships the locales Locales() lists; any
+	// other reads the application's Translator first and English after it.
+	Locale string
+
+	// TitleSeparator joins a screen's title to the application's name in the
+	// document title: with " — ", the admin's queue is titled
+	// "Saques dos investidores — Alpr.sh". The name is the APP_NAME hesape's
+	// view.New read from the request, the one the layout draws as its brand,
+	// so nothing here repeats it. Empty, or a request that carries no
+	// application name, titles a screen with its own title alone, as earlier
+	// releases did.
+	TitleSeparator string
+
 	// Paths are the segments every route is built from, under Prefix and
 	// AdminPrefix. A field left empty keeps its DefaultPaths value, so the zero
 	// value answers at the addresses earlier releases did; PortuguesePaths is
@@ -122,7 +140,9 @@ type Config struct {
 
 // ChromeRequest is what Config.Chrome is asked about one screen.
 type ChromeRequest struct {
-	// Title is the screen's title, already in the request's language.
+	// Title is the screen's title, already in the request's language, without
+	// the application's name Config.TitleSeparator adds to Page.Title: what a
+	// heading or a breadcrumb draws.
 	Title string
 	// Admin says the screen is one of the admin's, mounted under AdminPrefix.
 	Admin bool

@@ -9,6 +9,7 @@ import (
 	"github.com/arandu-io/framework/security"
 	"github.com/arandu-io/framework/validation"
 	"github.com/arandu-io/hesape/filesystem"
+	"github.com/arandu-io/hesape/translation"
 	wallet "github.com/hyz-is/arandu-wallet"
 )
 
@@ -74,7 +75,7 @@ func (r BankAccountRequest) Validate() validation.Errors {
 	validation.Required(e, "account_number", strings.TrimSpace(r.Number))
 	validation.MaxLen(e, "account_number", r.Number, 24)
 	if !slices.Contains(BankAccountTypes, r.Type) {
-		e.Add("account_type", "must be one of "+strings.Join(BankAccountTypes, ", "))
+		e.Add("account_type", message("one_of", translation.Replace{"options": strings.Join(BankAccountTypes, ", ")}))
 	}
 	return e
 }
@@ -113,7 +114,7 @@ func (s *InvestorService) AddPixAccount(ctx context.Context, actor security.Subj
 	validation.Required(errs, "pix_key", key)
 	validation.MaxLen(errs, "pix_key", key, maxNameLen)
 	if !slices.Contains(PixKeyTypes, keyType) {
-		errs.Add("pix_key_type", "must be one of "+strings.Join(PixKeyTypes, ", "))
+		errs.Add("pix_key_type", message("one_of", translation.Replace{"options": strings.Join(PixKeyTypes, ", ")}))
 	}
 	if errs.Any() {
 		return nil, errs
@@ -200,7 +201,7 @@ func (s *InvestorService) EntriesPage(ctx context.Context, actor security.Subjec
 	}
 	column, ok := sortableEntry[q.Sort]
 	if !ok {
-		return nil, 0, validation.Errors{"sort": {"is not a column the books can be ordered by"}}
+		return nil, 0, validation.Errors{"sort": {message("books_sort")}}
 	}
 	if q.PerPage <= 0 || q.PerPage > maxLimit {
 		q.PerPage = defaultLimit

@@ -10,6 +10,7 @@ import (
 	"github.com/arandu-io/framework/security"
 	"github.com/arandu-io/framework/validation"
 	"github.com/arandu-io/hesape/filesystem"
+	"github.com/arandu-io/hesape/translation"
 	activitylog "github.com/hyz-is/arandu-activitylog"
 	wallet "github.com/hyz-is/arandu-wallet"
 )
@@ -64,6 +65,19 @@ type InvestorService struct {
 	// nothing. describe turns an event into the sentence the entry carries.
 	activity *activitylog.Logger
 	describe func(event string) string
+	// labels are the sentences a report is written in for a request: the
+	// module's, in Config.Locale or the request's language. A service built
+	// without the module writes them in the request's language from the
+	// shipped catalogue.
+	labels func(ctx context.Context) Labels
+}
+
+// labelsFor are the sentences of one request.
+func (s *InvestorService) labelsFor(ctx context.Context) Labels {
+	if s.labels != nil {
+		return s.labels(ctx)
+	}
+	return Labels{Locale: translation.Locale(ctx)}
 }
 
 // location is the timezone days are counted in.
@@ -120,11 +134,11 @@ func (r CreateRequest) Validate() validation.Errors {
 		validation.Required(e, "legal_representative", r.LegalRepresentative)
 		validation.MaxLen(e, "legal_representative", r.LegalRepresentative, maxNameLen)
 	default:
-		e.Add("person_kind", fmt.Sprintf("must be %q or %q", Person, Company))
+		e.Add("person_kind", message("person_kind"))
 	}
 	if r.Kind == Person || r.Kind == Company {
 		if _, err := normalizeDocument(r.Kind, r.Document); err != nil {
-			e.Add("document", "is not a valid "+documentName(r.Kind))
+			e.Add("document", message("document", translation.Replace{"document": documentName(r.Kind)}))
 		}
 	}
 	return e
@@ -280,8 +294,11 @@ func (s *InvestorService) SetActive(ctx context.Context, actor security.Subject,
 	} else {
 		err = record.Suspend(s.now())
 	}
+	if err != nil && active {
+		return nil, validation.Errors{"status": {message("already_active")}}
+	}
 	if err != nil {
-		return nil, validation.Errors{"status": {err.Error()}}
+		return nil, validation.Errors{"status": {message("already_suspended")}}
 	}
 	if _, err := record.Save(ctx, g); err != nil {
 		return nil, err

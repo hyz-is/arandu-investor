@@ -8,6 +8,7 @@ import (
 
 	"github.com/arandu-io/framework/security"
 	"github.com/arandu-io/framework/validation"
+	"github.com/arandu-io/hesape/translation"
 	br "github.com/hyz-is/arandu-br"
 )
 
@@ -18,10 +19,6 @@ type Payer struct {
 	Name     string
 	Document string // CNPJ, digits or formatted
 }
-
-// monthNames are the months as the reports print them.
-var monthNames = [...]string{"janeiro", "fevereiro", "março", "abril", "maio", "junho",
-	"julho", "agosto", "setembro", "outubro", "novembro", "dezembro"}
 
 // reportOwner loads and authorizes the investor a report is about.
 func (s *InvestorService) reportOwner(ctx context.Context, actor security.Subject, g security.Grant, investorID string) (*Investor, error) {
@@ -57,7 +54,7 @@ func dash(s string) string {
 // costs.
 func (s *InvestorService) MonthlyReport(ctx context.Context, actor security.Subject, investorID string, year, month int, w io.Writer) error {
 	if year < 2000 || month < 1 || month > 12 {
-		return validation.Errors{"period": {"must be a year and a month, 1 to 12"}}
+		return validation.Errors{"period": {message("report_month")}}
 	}
 	g, err := security.Authorize(ctx, s.policy, actor, ReportsView, Investor{})
 	if err != nil {
@@ -76,24 +73,26 @@ func (s *InvestorService) MonthlyReport(ctx context.Context, actor security.Subj
 		return err
 	}
 
-	summary := sheet{name: "Resumo", rows: [][]cell{
-		rowOf(bold(fmt.Sprintf("Relatório mensal — %s de %d", monthNames[month-1], year))),
-		rowOf(text("Investidor"), text(owner.DisplayName())),
-		rowOf(text("CPF/CNPJ"), text(formattedDocument(*owner))),
+	l := s.labelsFor(ctx)
+	summary := sheet{name: l.T("report.summary_sheet"), rows: [][]cell{
+		rowOf(bold(l.line("report.monthly_title", translation.Replace{"month": l.Month(month), "year": year}))),
+		rowOf(text(l.T("noun.investor")), text(owner.DisplayName())),
+		rowOf(text(l.T("field.document")), text(formattedDocument(*owner))),
 		blankRow(),
-		rowOf(bold("Período"), bold("Faturamento"), bold("Tarifas"), bold("Custos"), bold("Líquido"),
-			bold("Participação"), bold("Valor"), bold("Situação")),
+		rowOf(bold(l.T("field.period")), bold(l.T("field.gross")), bold(l.T("field.fees")), bold(l.T("field.costs")),
+			bold(l.T("field.net")), bold(l.T("field.share")), bold(l.T("field.amount")), bold(l.T("field.status"))),
 	}}
-	detail := sheet{name: "Lançamentos", rows: [][]cell{
-		rowOf(bold("Data"), bold("Produto"), bold("Tipo"), bold("Descrição"), bold("Bruto"),
-			bold("Tarifa"), bold("Detalhe da tarifa"), bold("Custo rateado"), bold("Líquido")),
+	detail := sheet{name: l.T("report.entries_sheet"), rows: [][]cell{
+		rowOf(bold(l.T("field.occurred_on")), bold(l.T("field.product")), bold(l.T("field.kind")), bold(l.T("field.description")),
+			bold(l.T("report.gross")), bold(l.T("field.fee")), bold(l.T("field.fee_detail")), bold(l.T("field.cost_share")),
+			bold(l.T("field.line_net"))),
 	}}
 	var total int64
 	for _, inv := range invoices {
 		summary.rows = append(summary.rows, rowOf(
-			text(string(inv.PeriodStart)+" a "+string(inv.PeriodEnd.AddDays(-1))),
+			text(l.line("report.period", translation.Replace{"from": string(inv.PeriodStart), "to": string(inv.PeriodEnd.AddDays(-1))})),
 			money(inv.Gross), money(inv.Fees), money(inv.Costs), money(inv.Net),
-			percentBps(inv.ShareBps), money(inv.Amount), text(statusLabel(inv.Status))))
+			percentBps(inv.ShareBps), money(inv.Amount), text(l.Status(inv.Status))))
 		total += inv.Amount
 
 		links, err := InvoiceEntries(s.db).Where("invoice_id", "=", inv.ID).Get(ctx, g)
@@ -117,11 +116,11 @@ func (s *InvestorService) MonthlyReport(ctx context.Context, actor security.Subj
 				cost = roundDiv(e.Gross*inv.CostRatioPPM, 1_000_000)
 			}
 			detail.rows = append(detail.rows, rowOf(
-				text(string(e.OccurredOn)), text(e.ProductID), text(kindLabel(e.Kind)), text(e.Description),
+				text(string(e.OccurredOn)), text(e.ProductID), text(l.Kind(e.Kind)), text(e.Description),
 				money(e.Gross), money(e.Fee), text(e.FeeDetail), money(cost), money(e.Gross-e.Fee-cost)))
 		}
 	}
-	summary.rows = append(summary.rows, blankRow(), rowOf(bold("Total do mês"), text(""), text(""), text(""),
+	summary.rows = append(summary.rows, blankRow(), rowOf(bold(l.T("report.month_total")), text(""), text(""), text(""),
 		text(""), text(""), money(total)))
 	return writeWorkbook(w, []sheet{summary, detail})
 }
@@ -132,7 +131,7 @@ func (s *InvestorService) MonthlyReport(ctx context.Context, actor security.Subj
 // by this package, and the report says so.
 func (s *InvestorService) AnnualReport(ctx context.Context, actor security.Subject, investorID string, year int, w io.Writer) error {
 	if year < 2000 {
-		return validation.Errors{"year": {"must be a calendar year"}}
+		return validation.Errors{"year": {message("report_year")}}
 	}
 	g, err := security.Authorize(ctx, s.policy, actor, ReportsView, Investor{})
 	if err != nil {
@@ -161,64 +160,29 @@ func (s *InvestorService) AnnualReport(ctx context.Context, actor security.Subje
 	if digits, err := br.ParseCNPJ(payerDocument); err == nil {
 		payerDocument = br.CNPJ(digits)
 	}
-	report := sheet{name: "Informe de rendimentos", rows: [][]cell{
-		rowOf(bold("Comprovante de rendimentos — ano-calendário " + fmt.Sprint(year))),
+	l := s.labelsFor(ctx)
+	report := sheet{name: l.T("report.annual_sheet"), rows: [][]cell{
+		rowOf(bold(l.line("report.annual_title", translation.Replace{"year": year}))),
 		blankRow(),
-		rowOf(bold("1. Fonte pagadora")),
-		rowOf(text("Nome empresarial"), text(dash(s.payer.Name))),
-		rowOf(text("CNPJ"), text(dash(payerDocument))),
+		rowOf(bold(l.T("report.payer"))),
+		rowOf(text(l.T("report.payer_name")), text(dash(s.payer.Name))),
+		rowOf(text(l.T("report.payer_document")), text(dash(payerDocument))),
 		blankRow(),
-		rowOf(bold("2. Beneficiário")),
-		rowOf(text("Nome"), text(owner.DisplayName())),
-		rowOf(text("CPF/CNPJ"), text(formattedDocument(*owner))),
+		rowOf(bold(l.T("report.beneficiary"))),
+		rowOf(text(l.T("report.beneficiary_name")), text(owner.DisplayName())),
+		rowOf(text(l.T("field.document")), text(formattedDocument(*owner))),
 		blankRow(),
-		rowOf(bold("3. Rendimentos creditados no ano")),
-		rowOf(bold("Mês"), bold("Valor creditado"), bold("Imposto retido")),
+		rowOf(bold(l.T("report.income"))),
+		rowOf(bold(l.T("report.month")), bold(l.T("report.credited")), bold(l.T("report.withheld"))),
 	}}
 	for m, v := range byMonth {
-		report.rows = append(report.rows, rowOf(text(monthNames[m]), money(v), money(0)))
+		report.rows = append(report.rows, rowOf(text(l.Month(m+1)), money(v), money(0)))
 	}
 	report.rows = append(report.rows,
-		rowOf(bold("Total"), money(total), money(0)),
+		rowOf(bold(l.T("report.total")), money(total), money(0)),
 		blankRow(),
-		rowOf(text("Os valores são a participação do investidor-anjo nos resultados, creditados por fatura de período fechado.")),
-		rowOf(text("Nenhum imposto foi retido na fonte por este sistema. A classificação na declaração é do contador do beneficiário.")),
+		rowOf(text(l.T("report.share_note"))),
+		rowOf(text(l.T("report.tax_note"))),
 	)
 	return writeWorkbook(w, []sheet{report})
-}
-
-func statusLabel(s InvoiceStatus) string {
-	switch s {
-	case InvoiceAvailable:
-		return "Disponível"
-	case InvoiceOverdue:
-		return "Saque atrasado"
-	case InvoiceWithdrawn:
-		return "Sacada"
-	case InvoiceNothingDue:
-		return "Sem valor a receber"
-	}
-	return string(s)
-}
-
-func kindLabel(k EntryKind) string {
-	switch k {
-	case KindSale:
-		return "Venda"
-	case KindRenewal:
-		return "Renovação"
-	case KindRefund:
-		return "Reembolso"
-	case KindFee:
-		return "Tarifa"
-	case KindExpense:
-		return "Despesa"
-	case KindTax:
-		return "Imposto"
-	case KindAdjustment:
-		return "Ajuste"
-	case KindReversal:
-		return "Estorno"
-	}
-	return string(k)
 }

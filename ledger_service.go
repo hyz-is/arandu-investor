@@ -11,6 +11,7 @@ import (
 	"github.com/arandu-io/framework/security"
 	"github.com/arandu-io/framework/validation"
 	"github.com/arandu-io/hesape/database"
+	"github.com/arandu-io/hesape/translation"
 )
 
 // EntryRequest is one event the application reports: a sale, a renewal, a
@@ -45,33 +46,33 @@ func (r EntryRequest) Validate() validation.Errors {
 	validation.MaxLen(e, "fee_detail", r.FeeDetail, maxShortLen)
 	validation.MaxLen(e, "description", r.Description, maxTextLen)
 	if r.OccurredAt.IsZero() {
-		e.Add("occurred_at", "is required")
+		e.Add("occurred_at", message("required"))
 	}
 	if r.Fee < 0 {
-		e.Add("fee", "cannot be negative")
+		e.Add("fee", message("fee_negative"))
 	}
 	switch r.Kind {
 	case KindSale, KindRenewal:
 		if r.Gross <= 0 {
-			e.Add("gross", "must be positive for a sale or a renewal")
+			e.Add("gross", message("gross_positive"))
 		}
 	case KindRefund:
 		if r.Gross >= 0 {
-			e.Add("gross", "must be negative for a refund")
+			e.Add("gross", message("gross_negative"))
 		}
 	case KindAdjustment:
 		if r.Gross == 0 && r.Fee == 0 {
-			e.Add("gross", "an adjustment has to change something")
+			e.Add("gross", message("adjustment_empty"))
 		}
 	case KindFee, KindExpense, KindTax:
 		if r.Gross != 0 {
-			e.Add("gross", "must be zero: a "+string(r.Kind)+" is carried as its fee")
+			e.Add("gross", message("gross_zero", translation.Replace{"kind": string(r.Kind)}))
 		}
 		if r.Fee <= 0 {
-			e.Add("fee", "must be positive for a "+string(r.Kind))
+			e.Add("fee", message("fee_positive", translation.Replace{"kind": string(r.Kind)}))
 		}
 	default:
-		e.Add("kind", "must be sale, renewal, refund, fee, expense, tax or adjustment")
+		e.Add("kind", message("entry_kind"))
 	}
 	return e
 }
@@ -178,7 +179,7 @@ func (s *InvestorService) ReverseEntry(ctx context.Context, actor security.Subje
 	}
 	reversal, err := original.Reverse()
 	if err != nil {
-		return nil, validation.Errors{"entry": {err.Error()}}
+		return nil, validation.Errors{"entry": {message("reversal_of_reversal")}}
 	}
 	ref := "reversal:" + original.ID
 	if existing, err := Entries(s.db).Where("external_ref", "=", ref).First(ctx, g); err != nil || existing != nil {
@@ -237,25 +238,25 @@ func (r CostRequest) Validate() validation.Errors {
 	validation.Required(e, "category", r.Category)
 	validation.MaxLen(e, "category", r.Category, maxShortLen)
 	if r.Amount <= 0 {
-		e.Add("amount", "must be positive, in centavos")
+		e.Add("amount", message("amount_positive"))
 	}
 	switch r.Recurrence {
 	case Monthly, Yearly, Once:
 	default:
-		e.Add("recurrence", "must be monthly, yearly or once")
+		e.Add("recurrence", message("recurrence"))
 	}
 	starts, err := ParseDay(r.StartsOn)
 	if err != nil || starts.IsZero() {
-		e.Add("starts_on", "must be a day in the form "+DayLayout)
+		e.Add("starts_on", message("day", dayLayout))
 	}
 	ends, err := ParseDay(r.EndsOn)
 	if err != nil {
-		e.Add("ends_on", "must be a day in the form "+DayLayout+", or empty")
+		e.Add("ends_on", message("day_or_empty", dayLayout))
 	} else if !ends.IsZero() && ends.Before(starts) {
-		e.Add("ends_on", "must not be before the start")
+		e.Add("ends_on", message("not_before_start"))
 	}
 	if !r.AllProducts && len(cleanProducts(r.Products)) == 0 {
-		e.Add("products", "name at least one product, or charge the whole application")
+		e.Add("products", message("cost_products"))
 	}
 	return e
 }
@@ -329,7 +330,7 @@ func (s *InvestorService) CreateCost(ctx context.Context, actor security.Subject
 func (s *InvestorService) EndCost(ctx context.Context, actor security.Subject, costID, lastDay string) (*CostItem, error) {
 	ends, err := ParseDay(lastDay)
 	if err != nil || ends.IsZero() {
-		return nil, validation.Errors{"ends_on": {"must be a day in the form " + DayLayout}}
+		return nil, validation.Errors{"ends_on": {message("day", dayLayout)}}
 	}
 	g, err := security.Authorize(ctx, s.policy, actor, CostsManage, Investor{})
 	if err != nil {
@@ -343,7 +344,7 @@ func (s *InvestorService) EndCost(ctx context.Context, actor security.Subject, c
 		return nil, ErrNotFound
 	}
 	if ends.Before(record.StartsOn) {
-		return nil, validation.Errors{"ends_on": {"must not be before the start"}}
+		return nil, validation.Errors{"ends_on": {message("not_before_start")}}
 	}
 	record.EndsOn = ends
 	record.UpdatedAt = s.now()

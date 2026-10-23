@@ -87,7 +87,7 @@ func (s *InvestorService) contractFor(ctx context.Context, actor security.Subjec
 // projection's, and is marked as an estimate.
 func (s *InvestorService) StatementOf(ctx context.Context, actor security.Subject, contractID string, f StatementFilter) (*Statement, error) {
 	if !f.From.IsZero() && !f.To.IsZero() && f.To.Before(f.From) {
-		return nil, validation.Errors{"to": {"must not be before from"}}
+		return nil, validation.Errors{"to": {message("not_before_from")}}
 	}
 	g, err := security.Authorize(ctx, s.policy, actor, DashboardView, Investor{})
 	if err != nil {

@@ -38,7 +38,8 @@ func statementTable(data StatementData) components.DataTableProps {
 		ID: "investor-statement", Label: data.Labels.T("screen.statement_title"), URL: data.URL,
 		Caption: data.Labels.T("screen.statement_lead"), ColumnsLabel: data.Labels.T("control.columns"),
 		Lines: data.TableLines(), Complete: true, PageSize: 50, PageSizes: []int{25, 50, 100, 500},
-		SearchName: "q", SearchPlaceholder: data.Labels.T("control.search"),
+		SearchName: "q", SearchPlaceholder: data.Labels.T("control.search_placeholder"),
+		SearchLabel: data.SearchLabel(data.Labels.T("screen.statement_title")),
 		Columns: []components.TableColumn{
 			{Label: data.Labels.T("field.occurred_on"), Key: "day", Sortable: true},
 			{Label: data.Labels.T("field.kind"), Key: "kind", Sortable: true},
@@ -70,23 +71,20 @@ func statementTable(data StatementData) components.DataTableProps {
 		</nav>
 	</header>
 
-	<form class="card mt-6 flex flex-wrap items-end gap-3 p-4" method="get" action="{{ .URL }}">
-		<div>
-			{!! components.Field(components.FieldProps{Name: "from", Label: .Labels.T("field.from"), Type: "date", Value: .From}) !!}
+	{{-- A card is a flex column in Basecoat, so a row of filters is a grid
+	   here: one column on a phone, two on a tablet, the four fields and the
+	   button on one line on a desktop, every input on the same baseline. --}}
+	<form class="card mt-6 grid grid-cols-1 items-end gap-4 p-4 sm:grid-cols-2 lg:grid-cols-5" method="get" action="{{ .URL }}">
+		{!! components.Field(components.FieldProps{Name: "from", Label: .Labels.T("field.from"), Type: "date", Value: .From}) !!}
+		{!! components.Field(components.FieldProps{Name: "to", Label: .Labels.T("field.to"), Type: "date", Value: .To}) !!}
+		{!! components.Select(components.SelectProps{
+			Name: "kind", Label: .Labels.T("field.kind"), Value: .Kind,
+			Options: .KindOptions(), Placeholder: .Labels.T("control.all"),
+		}) !!}
+		{!! components.Field(components.FieldProps{Name: "product", Label: .Labels.T("field.product"), Value: .Product}) !!}
+		<div class="sm:col-span-2 lg:col-span-1">
+			{!! components.Button(components.ButtonProps{Label: .Labels.T("control.filter"), Type: "submit", Variant: "outline", ComponentProps: components.ComponentProps{Class: "w-full"}}) !!}
 		</div>
-		<div>
-			{!! components.Field(components.FieldProps{Name: "to", Label: .Labels.T("field.to"), Type: "date", Value: .To}) !!}
-		</div>
-		<div class="min-w-44">
-			{!! components.Select(components.SelectProps{
-				Name: "kind", Label: .Labels.T("field.kind"), Value: .Kind,
-				Options: .KindOptions(), Placeholder: .Labels.T("control.all"),
-			}) !!}
-		</div>
-		<div>
-			{!! components.Field(components.FieldProps{Name: "product", Label: .Labels.T("field.product"), Value: .Product}) !!}
-		</div>
-		{!! components.Button(components.ButtonProps{Label: .Labels.T("control.filter"), Type: "submit", Variant: "outline"}) !!}
 	</form>
 
 	<dl class="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

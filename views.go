@@ -229,9 +229,15 @@ func (s Screen) Chrome() any { return s.chrome }
 // framework/view.Layout's name for hesape's Any.
 func (s Screen) HasErrors() bool { return s.Page.Any() }
 
+// All is one line per rejected message, for the banner above a form, in the
+// screen's language: the field is named by its label in the catalogue
+// ("Chave PIX: Preencha este campo."), where hesape's page would name it by
+// its input ("Pix key").
+func (s Screen) All() []string { return s.Labels.Summary(s.Page.Errors) }
+
 // ErrorSummary is one line per rejected field: framework/view.Layout's name
-// for hesape's All.
-func (s Screen) ErrorSummary() []string { return s.Page.All() }
+// for All.
+func (s Screen) ErrorSummary() []string { return s.All() }
 
 // FieldErrors is every message for one field.
 func (s Screen) FieldErrors(name string) []string { return s.Page.Get(name) }
@@ -278,11 +284,13 @@ func framePage(p hview.Page) fview.Page {
 
 // ContractRow is one contract as a screen shows it.
 type ContractRow struct {
-	ID, Number, Share, Products, Status, Starts, Ends string
-	Version, BillingDay                               int
-	Active                                            bool
-	StatementURL, ProjectionURL, FileURL              string
-	CloseURL, AmendURL                                string
+	// Ends is the last day, or "em aberto" for a contract with none; Period
+	// is the two together, as a column draws them.
+	ID, Number, Share, Products, Status, Starts, Ends, Period string
+	Version, BillingDay                                       int
+	Active                                                    bool
+	StatementURL, ProjectionURL, FileURL                      string
+	CloseURL, AmendURL                                        string
 }
 
 // InvoiceRow is one invoice as a screen shows it.
@@ -311,6 +319,9 @@ type DashboardPageData struct {
 	// account is declared at, is the same as PayoutAccountsURL and kept for a
 	// published view that still reads it.
 	ReportsURL, PixURL, PayoutAccountsURL string
+	// ReportMonths and ReportYears are the reports offered: none before the
+	// investor's first contract started.
+	ReportMonths, ReportYears []ReportLink
 }
 
 // StatementRow is one line of a statement.

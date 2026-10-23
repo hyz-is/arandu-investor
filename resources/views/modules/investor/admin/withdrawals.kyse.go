@@ -93,7 +93,8 @@ func withdrawalsTable(data WithdrawalsData) components.DataTableProps {
 	return components.DataTableProps{
 		ID: "investor-withdrawals", Label: data.Labels.T("screen.admin_withdrawals_title"), URL: data.URL,
 		ColumnsLabel: data.Labels.T("control.columns"), Lines: data.TableLines(), Complete: true, PageSize: 25,
-		SearchName: "q", SearchPlaceholder: data.Labels.T("control.search"),
+		SearchName: "q", SearchPlaceholder: data.Labels.T("control.search_placeholder"),
+		SearchLabel: data.SearchLabel(data.Labels.T("screen.admin_withdrawals_title")),
 		Filters: []components.DataTableFilter{{Key: "status", Label: data.Labels.T("field.status"), Options: data.WithdrawalStatusOptions(), Selected: selected}},
 		Columns: []components.TableColumn{
 			{Label: data.Labels.T("field.requested_at"), Key: "requested_at", Sortable: true},

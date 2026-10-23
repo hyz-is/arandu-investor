@@ -38,7 +38,6 @@ import (
 	"github.com/arandu-io/framework/validation"
 	"github.com/arandu-io/hesape/database/migrations"
 	"github.com/arandu-io/hesape/database/schema"
-	"github.com/arandu-io/hesape/translation"
 	hview "github.com/arandu-io/hesape/view"
 	wallet "github.com/hyz-is/arandu-wallet"
 )
@@ -100,8 +99,9 @@ func New(cfg Config, db *data.DB, sessions *security.SessionStore) (*Module, err
 		svc:      svc,
 		sessions: sessions,
 	}
-	labels := m.Labels(FallbackLocale)
+	labels := m.Labels(cfg.Locale)
 	svc.describe = func(event string) string { return labels.T("activity." + strings.ReplaceAll(event, ".", "_")) }
+	svc.labels = func(ctx context.Context) Labels { return m.Labels(m.locale(ctx)) }
 	return m, nil
 }
 
@@ -161,7 +161,7 @@ func (m *Module) register(r *fhttp.Router, admin bool) {
 		if rt.admin != admin {
 			continue
 		}
-		r.Action(rt.method, rt.path, handlers[rt.name]).Name(rt.name)
+		r.Action(rt.method, rt.path, m.localized(handlers[rt.name])).Name(rt.name)
 	}
 }
 
@@ -211,18 +211,45 @@ func (m *Module) handlers() map[string]func(*fhttp.Context) error {
 // view.New builds, the application's chrome from Config.Chrome, the sentences
 // in the language the request negotiated, and where the package is mounted.
 func (m *Module) screen(ctx *fhttp.Context, who security.Subject, titleKey string, admin bool) (Screen, error) {
-	labels := m.Labels(translation.Locale(ctx.Ctx()))
-	page := hview.New(ctx, labels.T(titleKey))
+	labels := m.Labels(m.locale(ctx.Ctx()))
+	title := labels.T(titleKey)
+	page := hview.New(ctx, title)
+	page.Title = m.documentTitle(title, page.AppName)
 	page.Authenticated = who.ID != ""
 	sc := Screen{Page: page, Labels: labels, Prefix: m.cfg.Prefix, URLs: m.URLs()}
 	if m.cfg.Chrome != nil {
-		chrome, err := m.cfg.Chrome(ctx, ChromeRequest{Title: page.Title, Admin: admin, Subject: who, Page: page})
+		chrome, err := m.cfg.Chrome(ctx, ChromeRequest{Title: title, Admin: admin, Subject: who, Page: page})
 		if err != nil {
 			return Screen{}, err
 		}
 		sc.chrome = chrome
 	}
 	return sc, nil
+}
+
+// documentTitle is what the browser tab shows for a screen: its title, and
+// the application's name after Config.TitleSeparator when both are there.
+func (m *Module) documentTitle(title, appName string) string {
+	if m.cfg.TitleSeparator == "" || strings.TrimSpace(appName) == "" {
+		return title
+	}
+	return title + m.cfg.TitleSeparator + appName
+}
+
+// localized answers a rejected input in the request's language: the messages
+// of validation.Errors -- this package's, the framework helpers', and
+// arandu-wallet's -- are drawn again from the catalogue before the router
+// puts them in the flash, or in a 422 for a client that asked for JSON. Every
+// other answer passes through untouched.
+func (m *Module) localized(handler func(*fhttp.Context) error) func(*fhttp.Context) error {
+	return func(ctx *fhttp.Context) error {
+		err := handler(ctx)
+		var errs validation.Errors
+		if err == nil || !errors.As(err, &errs) {
+			return err
+		}
+		return m.Labels(m.locale(ctx.Ctx())).Errors(errs)
+	}
 }
 
 // today is the day it is in the application's timezone.
@@ -429,6 +456,7 @@ func (m *Module) mine(ctx *fhttp.Context) error {
 	now := time.Now().In(m.cfg.Location)
 	available, held, year, withdrawn := invoiceTotals(invoices, now.Year())
 	row := investorRow(m.URLs(), sc.Labels, record)
+	months, years := reportLinks(m.URLs().MyReports(), contracts, now)
 	return ctx.View(ViewDashboard, DashboardPageData{
 		Screen:            sc,
 		Investor:          row.Name,
@@ -445,6 +473,8 @@ func (m *Module) mine(ctx *fhttp.Context) error {
 		ReportsURL:        m.URLs().MyReports(),
 		PixURL:            m.URLs().PayoutAccounts(),
 		PayoutAccountsURL: m.URLs().PayoutAccounts(),
+		ReportMonths:      months,
+		ReportYears:       years,
 	})
 }
 
@@ -522,7 +552,7 @@ func (m *Module) reactivate(ctx *fhttp.Context) error {
 func contractForm(ctx *fhttp.Context) (ContractRequest, io.ReadCloser, error) {
 	ctx.Request.Body = stdhttp.MaxBytesReader(ctx.Response, ctx.Request.Body, MaxContractBytes+(1<<20))
 	if err := ctx.Request.ParseMultipartForm(MaxContractBytes); err != nil {
-		return ContractRequest{}, nil, validation.Errors{"file": {"could not be read; send the form as multipart/form-data, under the size limit"}}
+		return ContractRequest{}, nil, validation.Errors{"file": {message("multipart")}}
 	}
 	share, _ := strconv.ParseInt(ctx.Request.FormValue("share_bps"), 10, 64)
 	// A form types the share as a percentage, "15" or "12,5": two decimals of
@@ -656,7 +686,7 @@ func (m *Module) statement(ctx *fhttp.Context) error {
 	from, errFrom := ParseDay(ctx.Query("from"))
 	to, errTo := ParseDay(ctx.Query("to"))
 	if errFrom != nil || errTo != nil {
-		return validation.Errors{"period": {"from and to must be days in the form " + DayLayout}}
+		return validation.Errors{"period": {message("period_days", dayLayout)}}
 	}
 	who, _ := ctx.User()
 	st, err := m.svc.StatementOf(ctx.Ctx(), who, ctx.Param("id"), StatementFilter{
@@ -855,7 +885,7 @@ func (m *Module) myMonthlyReport(ctx *fhttp.Context) error {
 		return err
 	}
 	year, month := yearMonth(ctx)
-	return spreadsheet(ctx, fmt.Sprintf("relatorio-%04d-%02d.xlsx", year, month), func(w io.Writer) error {
+	return spreadsheet(ctx, m.Labels(m.locale(ctx.Ctx())).reportFile(year, month), func(w io.Writer) error {
 		return m.svc.MonthlyReport(ctx.Ctx(), who, me.ID, year, month, w)
 	})
 }
@@ -868,7 +898,7 @@ func (m *Module) myAnnualReport(ctx *fhttp.Context) error {
 		return err
 	}
 	year, _ := yearMonth(ctx)
-	return spreadsheet(ctx, fmt.Sprintf("informe-de-rendimentos-%04d.xlsx", year), func(w io.Writer) error {
+	return spreadsheet(ctx, m.Labels(m.locale(ctx.Ctx())).reportFile(year, 0), func(w io.Writer) error {
 		return m.svc.AnnualReport(ctx.Ctx(), who, me.ID, year, w)
 	})
 }
@@ -877,7 +907,7 @@ func (m *Module) myAnnualReport(ctx *fhttp.Context) error {
 func (m *Module) monthlyReport(ctx *fhttp.Context) error {
 	who, _ := ctx.User()
 	year, month := yearMonth(ctx)
-	return spreadsheet(ctx, fmt.Sprintf("relatorio-%04d-%02d.xlsx", year, month), func(w io.Writer) error {
+	return spreadsheet(ctx, m.Labels(m.locale(ctx.Ctx())).reportFile(year, month), func(w io.Writer) error {
 		return m.svc.MonthlyReport(ctx.Ctx(), who, ctx.Param("id"), year, month, w)
 	})
 }
@@ -886,7 +916,7 @@ func (m *Module) monthlyReport(ctx *fhttp.Context) error {
 func (m *Module) annualReport(ctx *fhttp.Context) error {
 	who, _ := ctx.User()
 	year, _ := yearMonth(ctx)
-	return spreadsheet(ctx, fmt.Sprintf("informe-de-rendimentos-%04d.xlsx", year), func(w io.Writer) error {
+	return spreadsheet(ctx, m.Labels(m.locale(ctx.Ctx())).reportFile(year, 0), func(w io.Writer) error {
 		return m.svc.AnnualReport(ctx.Ctx(), who, ctx.Param("id"), year, w)
 	})
 }
@@ -930,13 +960,13 @@ func (m *Module) occurredAt(ctx *fhttp.Context) (time.Time, error) {
 	if raw := ctx.Input("occurred_at"); raw != "" {
 		at, err := time.Parse(time.RFC3339, raw)
 		if err != nil {
-			return time.Time{}, validation.Errors{"occurred_at": {"must be a date and time in RFC 3339"}}
+			return time.Time{}, validation.Errors{"occurred_at": {message("date_time")}}
 		}
 		return at, nil
 	}
 	day, err := ParseDay(ctx.Input("occurred_on"))
 	if err != nil || day.IsZero() {
-		return time.Time{}, validation.Errors{"occurred_on": {"must be a day in the form " + DayLayout}}
+		return time.Time{}, validation.Errors{"occurred_on": {message("day", dayLayout)}}
 	}
 	t := day.Time()
 	return time.Date(t.Year(), t.Month(), t.Day(), 12, 0, 0, 0, m.cfg.Location), nil
@@ -958,7 +988,7 @@ func (m *Module) reverseEntry(ctx *fhttp.Context) error {
 // storeCost declares a cost.
 func (m *Module) storeCost(ctx *fhttp.Context) error {
 	if err := ctx.Request.ParseForm(); err != nil {
-		return validation.Errors{"form": {"could not be read"}}
+		return validation.Errors{"form": {message("form_unreadable")}}
 	}
 	products := splitProducts(ctx.Request.PostForm["products"])
 	who, _ := ctx.User()
@@ -1117,12 +1147,12 @@ func (m *Module) startWithdrawal(ctx *fhttp.Context) error {
 func (m *Module) payWithdrawal(ctx *fhttp.Context) error {
 	ctx.Request.Body = stdhttp.MaxBytesReader(ctx.Response, ctx.Request.Body, MaxContractBytes+(1<<20))
 	if err := ctx.Request.ParseMultipartForm(MaxContractBytes); err != nil {
-		return validation.Errors{"receipt": {"could not be read; send the form as multipart/form-data, under the size limit"}}
+		return validation.Errors{"receipt": {message("multipart")}}
 	}
 	in := wallet.PaymentInput{RequestID: ctx.Param("id"), EndToEndID: strings.TrimSpace(ctx.Request.FormValue("end_to_end_id"))}
 	file, header, err := ctx.Request.FormFile("receipt")
 	if err != nil {
-		return validation.Errors{"receipt": {"is required"}}
+		return validation.Errors{"receipt": {message("required")}}
 	}
 	defer file.Close()
 	in.ReceiptName = header.Filename
@@ -1157,7 +1187,7 @@ func (m *Module) asOf(ctx *fhttp.Context) (Day, error) {
 	if raw := ctx.Input("as_of"); raw != "" {
 		d, err := ParseDay(raw)
 		if err != nil {
-			return "", validation.Errors{"as_of": {"must be a day in the form " + DayLayout}}
+			return "", validation.Errors{"as_of": {message("day", dayLayout)}}
 		}
 		return d, nil
 	}

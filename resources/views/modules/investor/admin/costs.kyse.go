@@ -37,7 +37,8 @@ func costsTable(data CostsData) components.DataTableProps {
 		ID: "investor-costs", Label: data.Labels.T("screen.admin_costs_title"),
 		Caption: data.Labels.T("screen.admin_costs_lead"), ColumnsLabel: data.Labels.T("control.columns"),
 		Lines: data.TableLines(), Complete: true, PageSize: 25,
-		SearchName: "q", SearchPlaceholder: data.Labels.T("control.search"),
+		SearchName: "q", SearchPlaceholder: data.Labels.T("control.search_placeholder"),
+		SearchLabel: data.SearchLabel(data.Labels.T("screen.admin_costs_title")),
 		Columns: []components.TableColumn{
 			{Label: data.Labels.T("field.name"), Key: "name", Sortable: true},
 			{Label: data.Labels.T("field.category"), Key: "category", Sortable: true},

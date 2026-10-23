@@ -90,6 +90,10 @@ func run(ctx context.Context) error {
 		Files:  contracts,
 		Wallet: walletModule.Service(),
 		Payer:  investor.Payer{Name: "Empresa Ltda", Document: "11.222.333/0001-81"},
+		// A Brazilian product: every screen, message and report in pt-BR,
+		// and the document title followed by the application's APP_NAME.
+		Locale:         "pt-BR",
+		TitleSeparator: " — ",
 	}, handle, sessions)
 	if err != nil {
 		return err

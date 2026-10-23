@@ -200,9 +200,31 @@ Without them the views are not in the binary, and the module refuses to boot
 rather than answering the first request that reaches one with a 500. The
 refusal names the view, the command and the import.
 
-The sentences come from `resources/lang/<locale>/investor.json`. To change one,
-put the key in the application's own catalogue and pass it as
-`Config.Translator`; it is asked first, key by key.
+The sentences come from `resources/lang/<locale>/investor.json`, shipped in
+English and Brazilian Portuguese: the screens, the data tables (columns,
+search, pager), the validation messages, the reports and the activity
+descriptions. To change one, put the key in the application's own catalogue
+and pass it as `Config.Translator`; it is asked first, key by key.
+
+The language is `Config.Locale` when the application fixes one, else the one
+`translation.Middleware` or `translation.InLocale` put on the request, else
+English. A product that speaks only Brazilian Portuguese sets it once:
+
+```go
+investor.Config{
+	Locale:         "pt-BR", // screens, messages, reports, activity log
+	TitleSeparator: " — ",   // "Saques dos investidores — <APP_NAME>"
+	// ...
+}
+```
+
+Validation messages are written in English where they are produced -- by this
+package, the framework's helpers and arandu-wallet -- so a JSON client reads
+them as it always did, and each route draws them again in the request's
+language before the router puts them in the flash or in a 422.
+`Labels.Message`, `Labels.Errors` and `Labels.Summary` do the same for an
+application that calls the service directly. The error banner names each
+field by its label ("Chave PIX: Preencha este campo.").
 
 ## Configuration
 
@@ -215,6 +237,8 @@ put the key in the application's own catalogue and pass it as
 | `Location` | no | the timezone days are counted in. Defaults to `America/Sao_Paulo`. |
 | `Payer` | no | the paying company, printed on the income report. |
 | `Translator` | no | the application's catalogue, asked before the shipped one. |
+| `Locale` | no | the language of every screen, message, report and activity description (`"pt-BR"`). Empty follows the request, then English. |
+| `TitleSeparator` | no | joins a screen's title to the application's `APP_NAME` in the document title (`" — "` gives "Saques dos investidores — Alpr.sh"). Empty titles a screen with its own title. |
 | `Paths` | no | the segments of every route. Empty fields keep `DefaultPaths`; `PortuguesePaths` is the set in pt-BR (`/contratos`, `/faturas/{id}/saque`, `/faturas/{id}/comprovante`, `/conta-de-recebimento`, `/investidores`, `/saques`). |
 | `AdminPrefix` | no | where the admin's routes are mounted. Defaults to `Prefix` + `Paths.Admin`. |
 | `Middleware`, `AdminMiddleware` | no | run after `RequireAuth`, on every route and on the admin's only. |

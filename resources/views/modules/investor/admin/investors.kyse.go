@@ -32,7 +32,8 @@ func investorsTable(data InvestorsData) components.DataTableProps {
 		ID: "investor-registry", Label: data.Labels.T("screen.admin_investors_title"),
 		Caption: data.Labels.T("screen.admin_investors_lead"), ColumnsLabel: data.Labels.T("control.columns"),
 		Lines: data.TableLines(), Complete: data.Next == "", PageSize: 25,
-		SearchName: "q", SearchPlaceholder: data.Labels.T("control.search"),
+		SearchName: "q", SearchPlaceholder: data.Labels.T("control.search_placeholder"),
+		SearchLabel: data.SearchLabel(data.Labels.T("screen.admin_investors_title")),
 		Columns: []components.TableColumn{
 			{Label: data.Labels.T("field.name"), Key: "name", Sortable: true},
 			{Label: data.Labels.T("field.document"), Key: "document"},

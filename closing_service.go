@@ -10,6 +10,7 @@ import (
 	"github.com/arandu-io/framework/security"
 	"github.com/arandu-io/framework/validation"
 	"github.com/arandu-io/hesape/database"
+	"github.com/arandu-io/hesape/translation"
 	wallet "github.com/hyz-is/arandu-wallet"
 )
 
@@ -47,7 +48,7 @@ func periodEndFor(asOf Day, billingDay int) Day {
 // Closing the same period twice answers the invoice the first closing made.
 func (s *InvestorService) Close(ctx context.Context, actor security.Subject, contractID string, asOf Day) (*Invoice, error) {
 	if asOf.IsZero() {
-		return nil, validation.Errors{"as_of": {"must be a day in the form " + DayLayout}}
+		return nil, validation.Errors{"as_of": {message("day", dayLayout)}}
 	}
 	g, err := security.Authorize(ctx, s.policy, actor, EntriesManage, Investor{})
 	if err != nil {
@@ -93,7 +94,7 @@ func (s *InvestorService) recordClosing(ctx context.Context, g security.Grant, a
 // beside the others, and does not stop them.
 func (s *InvestorService) CloseDue(ctx context.Context, actor security.Subject, asOf Day) ([]*Invoice, map[string]error, error) {
 	if asOf.IsZero() {
-		return nil, nil, validation.Errors{"as_of": {"must be a day in the form " + DayLayout}}
+		return nil, nil, validation.Errors{"as_of": {message("day", dayLayout)}}
 	}
 	g, err := security.Authorize(ctx, s.policy, actor, EntriesManage, Investor{})
 	if err != nil {
@@ -134,7 +135,7 @@ func (s *InvestorService) CloseDue(ctx context.Context, actor security.Subject, 
 // investor.
 func (s *InvestorService) closeContract(ctx context.Context, actor security.Subject, g security.Grant, owner *Investor, rootID string, asOf Day) (*Invoice, error) {
 	if !owner.IsActive() {
-		return nil, validation.Errors{"investor": {"is suspended and takes part in no new closing"}}
+		return nil, validation.Errors{"investor": {message("investor_suspended")}}
 	}
 	if s.wallets == nil {
 		return nil, fmt.Errorf("investor: no wallet service was configured (Config.Wallet)")
@@ -145,7 +146,7 @@ func (s *InvestorService) closeContract(ctx context.Context, actor security.Subj
 		return nil, err
 	}
 	if current == nil {
-		return nil, validation.Errors{"contract": {"has no version in force"}}
+		return nil, validation.Errors{"contract": {message("no_version")}}
 	}
 	original, err := Contracts(s.db).WhereKey(rootID).First(ctx, g)
 	if err != nil {
@@ -171,7 +172,7 @@ func (s *InvestorService) closeContract(ctx context.Context, actor security.Subj
 		start = last.PeriodEnd
 	}
 	if !start.Before(end) {
-		return nil, validation.Errors{"period": {fmt.Sprintf("nothing to close: the next period of contract %s ends on %s", current.Number, periodEndFor(start.AddDays(32), current.BillingDay))}}
+		return nil, validation.Errors{"period": {message("nothing_to_close", translation.Replace{"number": current.Number, "day": string(periodEndFor(start.AddDays(32), current.BillingDay))})}}
 	}
 
 	contract, err := s.scopeOfContract(ctx, g, current)
