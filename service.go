@@ -10,6 +10,7 @@ import (
 	"github.com/arandu-io/framework/security"
 	"github.com/arandu-io/framework/validation"
 	"github.com/arandu-io/hesape/filesystem"
+	activitylog "github.com/hyz-is/arandu-activitylog"
 	wallet "github.com/hyz-is/arandu-wallet"
 )
 
@@ -59,6 +60,10 @@ type InvestorService struct {
 	wallets *wallet.WalletService
 	// payer is who pays the investors, printed on the income report.
 	payer Payer
+	// activity is arandu-activitylog's logger, Config.Activity; nil records
+	// nothing. describe turns an event into the sentence the entry carries.
+	activity *activitylog.Logger
+	describe func(event string) string
 }
 
 // location is the timezone days are counted in.
@@ -191,6 +196,9 @@ func (s *InvestorService) Create(ctx context.Context, actor security.Subject, in
 	if _, err := candidate.Save(ctx, g); err != nil {
 		return nil, err
 	}
+	if err := s.record(ctx, g, actor, EventInvestorCreated, "investor", candidate.ID, map[string]any{"name": candidate.Name, "user_id": candidate.UserID, "kind": string(candidate.Kind)}); err != nil {
+		return nil, err
+	}
 	return candidate, nil
 }
 
@@ -244,6 +252,9 @@ func (s *InvestorService) Update(ctx context.Context, actor security.Subject, id
 	if _, err := record.Save(ctx, g); err != nil {
 		return nil, err
 	}
+	if err := s.record(ctx, g, actor, EventInvestorUpdated, "investor", record.ID, map[string]any{"name": record.Name, "email": record.Email}); err != nil {
+		return nil, err
+	}
 	return record, nil
 }
 
@@ -273,6 +284,9 @@ func (s *InvestorService) SetActive(ctx context.Context, actor security.Subject,
 		return nil, validation.Errors{"status": {err.Error()}}
 	}
 	if _, err := record.Save(ctx, g); err != nil {
+		return nil, err
+	}
+	if err := s.record(ctx, g, actor, map[bool]string{true: EventInvestorReactivated, false: EventInvestorSuspended}[active], "investor", record.ID, nil); err != nil {
 		return nil, err
 	}
 	return record, nil

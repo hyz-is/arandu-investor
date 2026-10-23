@@ -99,6 +99,11 @@ func (s *InvestorService) WithdrawInvoice(ctx context.Context, actor security.Su
 	if _, err := invoice.Save(ctx, g); err != nil {
 		return nil, err
 	}
+	if err := s.record(ctx, g, actor, EventWithdrawalRequested, "investor_invoice", invoice.ID, map[string]any{
+		"investor_id": owner.ID, "request_id": req.ID, "amount": invoice.Amount, "account_id": accountID,
+	}); err != nil {
+		return nil, err
+	}
 	return &InvoiceView{Invoice: *invoice, Withdrawal: req}, nil
 }
 

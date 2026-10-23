@@ -77,7 +77,7 @@ func dashboardInvoices(data DashboardData) components.DataTableProps {
 			withdrawal = components.Badge(components.BadgeProps{Label: i.Withdrawal, Variant: statusVariant(i.WithdrawalKey)})
 		}
 		if i.ReceiptURL != "" {
-			withdrawal += " " + components.Link(components.LinkProps{Label: data.Labels.T("field.receipt"), URL: i.ReceiptURL, Variant: "hover"})
+			withdrawal += " " + components.Link(components.LinkProps{Label: data.Labels.T("control.view_receipt"), URL: i.ReceiptURL, Variant: "hover"})
 		}
 		rows = append(rows, components.TableRow{Key: i.ID, Cells: []components.TableCell{
 			{Text: i.Period},
@@ -110,12 +110,66 @@ func dashboardInvoices(data DashboardData) components.DataTableProps {
 	}
 }
 
-func accountSelect(data DashboardData) []components.SelectOption {
-	options := make([]components.SelectOption, 0, len(data.Accounts))
-	for _, a := range data.Accounts {
-		options = append(options, components.SelectOption{Value: a.ID, Label: a.Label})
+// withdrawableTable lists the invoices that can be asked for now, each with
+// the form that asks for it: the account to be paid into and the button.
+func withdrawableTable(data DashboardData) components.DataTableProps {
+	rows := make([]components.TableRow, 0, len(data.Invoices))
+	for _, i := range data.Invoices {
+		if !i.Withdrawable {
+			continue
+		}
+		action := template.HTML("")
+		if len(data.Accounts) > 0 {
+			action = data.WithdrawForm(i.WithdrawURL, data.Accounts)
+		}
+		rows = append(rows, components.TableRow{Key: i.ID, Cells: []components.TableCell{
+			{Text: i.Period},
+			{Text: i.Amount},
+			{HTML: action},
+		}})
 	}
-	return options
+	return components.DataTableProps{
+		ID: "investor-withdrawable", Label: data.Labels.T("screen.withdraw_title"),
+		ColumnsLabel: data.Labels.T("control.columns"), Lines: data.TableLines(), Complete: true, PageSize: 12,
+		Columns: []components.TableColumn{
+			{Label: data.Labels.T("field.period"), Key: "period"},
+			{Label: data.Labels.T("field.amount"), Key: "amount", Align: "right"},
+			{Label: data.Labels.T("field.account"), Key: "action"},
+		},
+		Rows:  rows,
+		Empty: components.EmptyProps{Title: data.Labels.T("screen.withdraw_none")},
+	}
+}
+
+// accountsTable lists the investor's payout accounts.
+func accountsTable(data DashboardData) components.DataTableProps {
+	rows := make([]components.TableRow, 0, len(data.Accounts))
+	for _, a := range data.Accounts {
+		rows = append(rows, components.TableRow{Key: a.ID, Cells: []components.TableCell{
+			{Text: a.Label},
+			{HTML: components.Badge(components.BadgeProps{Label: data.Labels.T("payout." + a.Kind), Variant: "outline"}), SortValue: a.Kind},
+		}})
+	}
+	return components.DataTableProps{
+		ID: "investor-accounts", Label: data.Labels.T("screen.accounts_title"),
+		ColumnsLabel: data.Labels.T("control.columns"), Lines: data.TableLines(), Complete: true, PageSize: 12,
+		Columns: []components.TableColumn{
+			{Label: data.Labels.T("field.account"), Key: "label"},
+			{Label: data.Labels.T("field.payout_kind"), Key: "kind"},
+		},
+		Rows:  rows,
+		Empty: components.EmptyProps{Title: data.Labels.T("screen.accounts_empty")},
+	}
+}
+
+// hasWithdrawable says whether any invoice can be asked for now.
+func hasWithdrawable(data DashboardData) bool {
+	for _, i := range data.Invoices {
+		if i.Withdrawable {
+			return true
+		}
+	}
+	return false
 }
 
 func reportMonths(data DashboardData) []components.LinkProps {
@@ -182,57 +236,63 @@ func twoDigits(n int) string {
 		</div>
 	</dl>
 
+	<div class="mt-10" id="saque">
+		<h2 class="text-lg font-semibold">{{ .Labels.T("screen.withdraw_title") }}</h2>
+		<p class="text-muted-foreground mt-1 max-w-prose text-sm">{{ .Labels.T("screen.withdraw_lead") }}</p>
+		@if(hasWithdrawable(.) && len(.Accounts) == 0)
+			<p class="mt-3 text-sm"><a class="underline underline-offset-4" href="#contas">{{ .Labels.T("control.no_account") }}</a></p>
+		@endif
+		{!! components.DataTable(withdrawableTable(.)) !!}
+	</div>
+
 	<div class="mt-10">
-		<h2 class="text-lg font-semibold">{{ .Labels.T("screen.invoices_title") }}</h2>
+		<h2 class="text-lg font-semibold">{{ .Labels.T("screen.withdrawals_title") }}</h2>
+		<p class="text-muted-foreground mt-1 max-w-prose text-sm">{{ .Labels.T("screen.withdrawals_lead") }}</p>
 		{!! components.DataTable(dashboardInvoices(.)) !!}
 	</div>
 
-	<div class="mt-10 grid gap-6 lg:grid-cols-3">
-		<div class="card p-5 lg:col-span-2">
-			<h2 class="text-base font-semibold">{{ .Labels.T("control.withdraw") }}</h2>
-			<p class="text-muted-foreground mt-1 text-sm">{{ .Labels.T("screen.withdraw_lead") }}</p>
-			@if(len(.Accounts) == 0)
-				<p class="text-muted-foreground mt-4 text-sm">{{ .Labels.T("control.no_account") }}</p>
-			@else
-				<ul class="mt-4 grid gap-3">
-				@foreach(.Invoices as invoice)
-					@if(invoice.Withdrawable)
-						<li class="flex flex-wrap items-end justify-between gap-3 border-t pt-3">
-							<div>
-								<p class="text-sm font-medium">{{ invoice.Period }}</p>
-								<p class="text-lg font-semibold tabular-nums">{{ invoice.Amount }}</p>
-							</div>
-							<form class="flex flex-wrap items-end gap-2" method="post" action="{{ invoice.WithdrawURL }}">
-								@csrf
-								<div class="min-w-56">
-									{!! components.Select(components.SelectProps{
-										Name: "account_id", Label: .Labels.T("field.account"),
-										Options: accountSelect(.), Placeholder: .Labels.T("control.choose_account"),
-										Required: true, Page: .Form(),
-									}) !!}
-								</div>
-								{!! components.Button(components.ButtonProps{Label: .Labels.T("control.withdraw"), Type: "submit"}) !!}
-							</form>
-						</li>
-					@endif
-				@endforeach
-				</ul>
-			@endif
-		</div>
+	<div class="mt-10" id="contas">
+		<h2 class="text-lg font-semibold">{{ .Labels.T("screen.accounts_title") }}</h2>
+		<p class="text-muted-foreground mt-1 max-w-prose text-sm">{{ .Labels.T("screen.accounts_lead") }}</p>
+		{!! components.DataTable(accountsTable(.)) !!}
 
-		<form class="card grid content-start gap-3 p-5" method="post" action="{{ .PixURL }}">
-			@csrf
-			<h2 class="text-base font-semibold">{{ .Labels.T("screen.pix_title") }}</h2>
-			<p class="text-muted-foreground text-sm">{{ .Labels.T("screen.pix_lead") }}</p>
-			{!! components.Select(components.SelectProps{
-				Name: "pix_key_type", Label: .Labels.T("field.pix_key_type"),
-				Options: .PixKeyOptions(), Required: true, Page: .Form(),
-			}) !!}
-			{!! components.Field(components.FieldProps{
-				Name: "pix_key", Label: .Labels.T("field.pix_key"), Required: true, Page: .Form(),
-			}) !!}
-			<div>{!! components.Button(components.ButtonProps{Label: .Labels.T("control.save"), Type: "submit", Variant: "outline"}) !!}</div>
-		</form>
+		<div class="mt-6 grid gap-6 lg:grid-cols-2">
+			<form class="card grid content-start gap-3 p-5" method="post" action="{{ .PayoutAccountsURL }}">
+				@csrf
+				<input type="hidden" name="kind" value="pix">
+				<h3 class="text-base font-semibold">{{ .Labels.T("control.add_pix") }}</h3>
+				{!! components.Select(components.SelectProps{
+					Name: "pix_key_type", Label: .Labels.T("field.pix_key_type"),
+					Options: .PixKeyOptions(), Required: true, Page: .Form(),
+				}) !!}
+				{!! components.Field(components.FieldProps{
+					Name: "pix_key", Label: .Labels.T("field.pix_key"), Required: true, Page: .Form(),
+				}) !!}
+				<div>{!! components.Button(components.ButtonProps{Label: .Labels.T("control.save"), Type: "submit", Variant: "outline"}) !!}</div>
+			</form>
+
+			<form class="card grid content-start gap-3 p-5" method="post" action="{{ .PayoutAccountsURL }}">
+				@csrf
+				<input type="hidden" name="kind" value="bank">
+				<h3 class="text-base font-semibold">{{ .Labels.T("control.add_bank") }}</h3>
+				{!! components.Field(components.FieldProps{
+					Name: "bank", Label: .Labels.T("field.bank"), Required: true, Page: .Form(),
+				}) !!}
+				<div class="grid gap-3 sm:grid-cols-2">
+					{!! components.Field(components.FieldProps{
+						Name: "branch", Label: .Labels.T("field.branch"), Required: true, Page: .Form(),
+					}) !!}
+					{!! components.Field(components.FieldProps{
+						Name: "account_number", Label: .Labels.T("field.account_number"), Required: true, Page: .Form(),
+					}) !!}
+				</div>
+				{!! components.Select(components.SelectProps{
+					Name: "account_type", Label: .Labels.T("field.account_type"),
+					Options: .BankAccountTypeOptions(), Required: true, Page: .Form(),
+				}) !!}
+				<div>{!! components.Button(components.ButtonProps{Label: .Labels.T("control.save"), Type: "submit", Variant: "outline"}) !!}</div>
+			</form>
+		</div>
 	</div>
 
 	<div class="mt-10">

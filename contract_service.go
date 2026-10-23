@@ -145,7 +145,14 @@ func (s *InvestorService) CreateContract(ctx context.Context, actor security.Sub
 	if _, err := security.Authorize(ctx, s.policy, actor, InvestorsManage, *owner); err != nil {
 		return nil, err
 	}
-	return s.writeContract(ctx, actor, g, owner, nil, in, file)
+	contract, err := s.writeContract(ctx, actor, g, owner, nil, in, file)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.record(ctx, g, actor, EventContractCreated, "investor_contract", contract.ID, map[string]any{"investor_id": owner.ID, "number": contract.Number, "share_bps": contract.ShareBps}); err != nil {
+		return nil, err
+	}
+	return contract, nil
 }
 
 // AmendContract registers an amendment: a new version of the contract named,
@@ -187,7 +194,14 @@ func (s *InvestorService) AmendContract(ctx context.Context, actor security.Subj
 	if current == nil {
 		return nil, validation.Errors{"contract": {"has no version in force to amend"}}
 	}
-	return s.writeContract(ctx, actor, g, owner, current, in, file)
+	contract, err := s.writeContract(ctx, actor, g, owner, current, in, file)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.record(ctx, g, actor, EventContractAmended, "investor_contract", contract.ID, map[string]any{"investor_id": owner.ID, "supersedes": current.ID, "version": contract.Version, "share_bps": contract.ShareBps}); err != nil {
+		return nil, err
+	}
+	return contract, nil
 }
 
 // writeContract stores the file and the rows, after the caller authorized and

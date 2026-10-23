@@ -70,7 +70,22 @@ func (s *InvestorService) Close(ctx context.Context, actor security.Subject, con
 	if _, err := security.Authorize(ctx, s.policy, actor, EntriesManage, *owner); err != nil {
 		return nil, err
 	}
-	return s.closeContract(ctx, actor, g, owner, named.RootID, asOf)
+	invoice, err := s.closeContract(ctx, actor, g, owner, named.RootID, asOf)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.recordClosing(ctx, g, actor, invoice); err != nil {
+		return nil, err
+	}
+	return invoice, nil
+}
+
+// recordClosing writes the entry of a period closed into an invoice.
+func (s *InvestorService) recordClosing(ctx context.Context, g security.Grant, actor security.Subject, invoice *Invoice) error {
+	return s.record(ctx, g, actor, EventPeriodClosed, "investor_invoice", invoice.ID, map[string]any{
+		"investor_id": invoice.InvestorID, "period_start": string(invoice.PeriodStart), "period_end": string(invoice.PeriodEnd),
+		"net": invoice.Net, "amount": invoice.Amount, "status": string(invoice.Status),
+	})
 }
 
 // CloseDue closes every contract whose billing day is asOf's day: the admin's
@@ -103,6 +118,10 @@ func (s *InvestorService) CloseDue(ctx context.Context, actor security.Subject, 
 		}
 		invoice, err := s.closeContract(ctx, actor, g, owner, c.RootID, asOf)
 		if err != nil {
+			failed[c.ID] = err
+			continue
+		}
+		if err := s.recordClosing(ctx, g, actor, invoice); err != nil {
 			failed[c.ID] = err
 			continue
 		}

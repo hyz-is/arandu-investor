@@ -36,11 +36,10 @@ import (
 	"github.com/arandu-io/framework/http/middleware"
 	"github.com/arandu-io/framework/security"
 	"github.com/arandu-io/framework/validation"
-	fview "github.com/arandu-io/framework/view"
 	"github.com/arandu-io/hesape/database/migrations"
 	"github.com/arandu-io/hesape/database/schema"
 	"github.com/arandu-io/hesape/translation"
-	"github.com/arandu-io/hesape/view"
+	hview "github.com/arandu-io/hesape/view"
 	wallet "github.com/hyz-is/arandu-wallet"
 )
 
@@ -95,11 +94,15 @@ func New(cfg Config, db *data.DB, sessions *security.SessionStore) (*Module, err
 	svc.loc = cfg.Location
 	svc.wallets = cfg.Wallet
 	svc.payer = cfg.Payer
-	return &Module{
+	svc.activity = cfg.Activity
+	m := &Module{
 		cfg:      cfg,
 		svc:      svc,
 		sessions: sessions,
-	}, nil
+	}
+	labels := m.Labels(FallbackLocale)
+	svc.describe = func(event string) string { return labels.T("activity." + strings.ReplaceAll(event, ".", "_")) }
+	return m, nil
 }
 
 // Service is the use cases, for an application that calls them from its own
@@ -113,7 +116,7 @@ func (m *Module) Service() *InvestorService { return m.svc }
 // so changing it changes addresses that other code has already written down.
 func (m *Module) Name() string { return "investor" }
 
-// Routes registers the module's routes under the configured prefix.
+// Routes registers every route of the module: the investor's and the admin's.
 //
 // They are named, so a URL is built from a name rather than written out a
 // second time somewhere else -- two spellings of one address disagree, and the
@@ -124,88 +127,106 @@ func (m *Module) Name() string { return "investor" }
 // the guarded group before the first registration, and no unguarded router is
 // left in scope for the next route to be added to. RequireAuth sends a request
 // with no session to the sign-in screen, and puts the subject of one that has a
-// session on its context, where a handler reads it with ctx.User.
+// session on its context, where a handler reads it with ctx.User;
+// Config.Middleware runs after it, and Config.AdminMiddleware after that on
+// the admin's routes.
 func (m *Module) Routes(r *fhttp.Router) {
-	r = r.Group("", middleware.RequireAuth(m.sessions))
-
-	// The investor's own panel.
-	r.Action(stdhttp.MethodGet, m.cfg.Prefix+"/me", m.mine).Name("investor.me")
-
-	// The admin's registry. The policy decides who reaches it; the path only
-	// says what it is.
-	admin := m.cfg.Prefix + adminSegment
-	r.Action(stdhttp.MethodGet, admin+"/investors", m.index).Name("investor.admin.investors.index")
-	r.Action(stdhttp.MethodPost, admin+"/investors", m.store).Name("investor.admin.investors.store")
-	r.Action(stdhttp.MethodGet, admin+"/investors/{id}", m.show).Name("investor.admin.investors.show")
-	r.Action(stdhttp.MethodPut, admin+"/investors/{id}", m.update).Name("investor.admin.investors.update")
-	r.Action(stdhttp.MethodPost, admin+"/investors/{id}/suspension", m.suspend).Name("investor.admin.investors.suspend")
-	r.Action(stdhttp.MethodDelete, admin+"/investors/{id}/suspension", m.reactivate).Name("investor.admin.investors.reactivate")
-
-	// Contracts: registered and amended by the admin, read by the admin and by
-	// the investor they belong to. The file is downloaded through the package,
-	// never linked, so the policy answers every read of it.
-	r.Action(stdhttp.MethodGet, admin+"/investors/{id}/contracts", m.contracts).Name("investor.admin.contracts.index")
-	r.Action(stdhttp.MethodPost, admin+"/investors/{id}/contracts", m.storeContract).Name("investor.admin.contracts.store")
-	r.Action(stdhttp.MethodPost, admin+"/contracts/{id}/amendments", m.amendContract).Name("investor.admin.contracts.amend")
-	r.Action(stdhttp.MethodGet, m.cfg.Prefix+"/me/contracts", m.myContracts).Name("investor.me.contracts")
-	r.Action(stdhttp.MethodGet, m.cfg.Prefix+"/contracts/{id}/file", m.contractFile).Name("investor.contracts.file")
-
-	// The statement, the projection and the costs: the investor's panel, which
-	// the admin reads too.
-	r.Action(stdhttp.MethodGet, m.cfg.Prefix+"/contracts/{id}/statement", m.statement).Name("investor.contracts.statement")
-	r.Action(stdhttp.MethodGet, m.cfg.Prefix+"/contracts/{id}/projection", m.projection).Name("investor.contracts.projection")
-	r.Action(stdhttp.MethodGet, m.cfg.Prefix+"/costs", m.costs).Name("investor.costs.index")
-	r.Action(stdhttp.MethodGet, m.cfg.Prefix+"/me/invoices", m.myInvoices).Name("investor.me.invoices")
-	r.Action(stdhttp.MethodPost, m.cfg.Prefix+"/invoices/{id}/withdrawal", m.withdrawInvoice).Name("investor.invoices.withdraw")
-	r.Action(stdhttp.MethodGet, m.cfg.Prefix+"/me/reports/{year}/{month}", m.myMonthlyReport).Name("investor.me.reports.monthly")
-	r.Action(stdhttp.MethodGet, m.cfg.Prefix+"/me/reports/{year}", m.myAnnualReport).Name("investor.me.reports.annual")
-	r.Action(stdhttp.MethodPost, m.cfg.Prefix+"/me/payout-accounts", m.storePixAccount).Name("investor.me.payout_accounts.store")
-	r.Action(stdhttp.MethodGet, m.cfg.Prefix+"/invoices/{id}/receipt", m.invoiceReceipt).Name("investor.invoices.receipt")
-
-	// The admin's books: entries by hand, costs, closings, and any investor's
-	// invoices and reports.
-	r.Action(stdhttp.MethodGet, admin+"/entries", m.entries).Name("investor.admin.entries.index")
-	r.Action(stdhttp.MethodPost, admin+"/entries", m.storeEntry).Name("investor.admin.entries.store")
-	r.Action(stdhttp.MethodPost, admin+"/entries/{id}/reversal", m.reverseEntry).Name("investor.admin.entries.reverse")
-	r.Action(stdhttp.MethodGet, admin+"/costs", m.adminCosts).Name("investor.admin.costs.index")
-	r.Action(stdhttp.MethodPost, admin+"/costs", m.storeCost).Name("investor.admin.costs.store")
-	r.Action(stdhttp.MethodPost, admin+"/costs/{id}/end", m.endCost).Name("investor.admin.costs.end")
-	r.Action(stdhttp.MethodPost, admin+"/contracts/{id}/closings", m.closeContract).Name("investor.admin.closings.store")
-	r.Action(stdhttp.MethodPost, admin+"/closings/due", m.closeDue).Name("investor.admin.closings.due")
-	r.Action(stdhttp.MethodGet, admin+"/investors/{id}/invoices", m.invoices).Name("investor.admin.invoices.index")
-	r.Action(stdhttp.MethodGet, admin+"/investors/{id}/reports/{year}/{month}", m.monthlyReport).Name("investor.admin.reports.monthly")
-	r.Action(stdhttp.MethodGet, admin+"/investors/{id}/reports/{year}", m.annualReport).Name("investor.admin.reports.annual")
-
-	// The operator's side of the investors' withdrawals: the PIX is made
-	// outside the system, and the receipt is attached here.
-	r.Action(stdhttp.MethodGet, admin+"/withdrawals", m.withdrawals).Name("investor.admin.withdrawals.index")
-	r.Action(stdhttp.MethodPost, admin+"/withdrawals/{id}/processing", m.startWithdrawal).Name("investor.admin.withdrawals.process")
-	r.Action(stdhttp.MethodPost, admin+"/withdrawals/{id}/payment", m.payWithdrawal).Name("investor.admin.withdrawals.pay")
-	r.Action(stdhttp.MethodPost, admin+"/withdrawals/{id}/rejection", m.rejectWithdrawal).Name("investor.admin.withdrawals.reject")
+	m.InvestorRoutes(r)
+	m.AdminRoutes(r)
 }
 
-// screen is what every page of this package is drawn with: the application's
-// chrome, built by view.New as for any of its own screens, the sentences in
-// the language the request negotiated, and where the package is mounted.
-func (m *Module) screen(ctx *fhttp.Context, who security.Subject, titleKey string) Screen {
+// InvestorRoutes registers the investor's own routes alone, under Prefix, for
+// an application that mounts them inside its own side -- a customer's panel --
+// with that side's guards on r.
+func (m *Module) InvestorRoutes(r *fhttp.Router) { m.register(r, false) }
+
+// AdminRoutes registers the admin's routes alone, under AdminPrefix, for an
+// application that mounts them inside its operator console with that
+// console's guards on r.
+func (m *Module) AdminRoutes(r *fhttp.Router) { m.register(r, true) }
+
+func (m *Module) register(r *fhttp.Router, admin bool) {
+	guards := []fhttp.Middleware{middleware.RequireAuth(m.sessions)}
+	for _, mw := range m.cfg.Middleware {
+		guards = append(guards, mw)
+	}
+	if admin {
+		for _, mw := range m.cfg.AdminMiddleware {
+			guards = append(guards, mw)
+		}
+	}
+	r = r.Group("", guards...)
+	handlers := m.handlers()
+	for _, rt := range routeTable(m.cfg) {
+		if rt.admin != admin {
+			continue
+		}
+		r.Action(rt.method, rt.path, handlers[rt.name]).Name(rt.name)
+	}
+}
+
+// handlers are the handlers of the route table, by route name.
+func (m *Module) handlers() map[string]func(*fhttp.Context) error {
+	return map[string]func(*fhttp.Context) error{
+		"investor.me":                         m.mine,
+		"investor.me.contracts":               m.myContracts,
+		"investor.contracts.file":             m.contractFile,
+		"investor.contracts.statement":        m.statement,
+		"investor.contracts.projection":       m.projection,
+		"investor.costs.index":                m.costs,
+		"investor.me.invoices":                m.myInvoices,
+		"investor.invoices.withdraw":          m.withdrawInvoice,
+		"investor.me.reports.monthly":         m.myMonthlyReport,
+		"investor.me.reports.annual":          m.myAnnualReport,
+		"investor.me.payout_accounts.store":   m.storePayoutAccount,
+		"investor.invoices.receipt":           m.invoiceReceipt,
+		"investor.admin.investors.index":      m.index,
+		"investor.admin.investors.store":      m.store,
+		"investor.admin.investors.show":       m.show,
+		"investor.admin.investors.update":     m.update,
+		"investor.admin.investors.suspend":    m.suspend,
+		"investor.admin.investors.reactivate": m.reactivate,
+		"investor.admin.contracts.index":      m.contracts,
+		"investor.admin.contracts.store":      m.storeContract,
+		"investor.admin.contracts.amend":      m.amendContract,
+		"investor.admin.entries.index":        m.entries,
+		"investor.admin.entries.store":        m.storeEntry,
+		"investor.admin.entries.reverse":      m.reverseEntry,
+		"investor.admin.costs.index":          m.adminCosts,
+		"investor.admin.costs.store":          m.storeCost,
+		"investor.admin.costs.end":            m.endCost,
+		"investor.admin.closings.store":       m.closeContract,
+		"investor.admin.closings.due":         m.closeDue,
+		"investor.admin.invoices.index":       m.invoices,
+		"investor.admin.reports.monthly":      m.monthlyReport,
+		"investor.admin.reports.annual":       m.annualReport,
+		"investor.admin.withdrawals.index":    m.withdrawals,
+		"investor.admin.withdrawals.process":  m.startWithdrawal,
+		"investor.admin.withdrawals.pay":      m.payWithdrawal,
+		"investor.admin.withdrawals.reject":   m.rejectWithdrawal,
+	}
+}
+
+// screen is what every page of this package is drawn with: the page hesape's
+// view.New builds, the application's chrome from Config.Chrome, the sentences
+// in the language the request negotiated, and where the package is mounted.
+func (m *Module) screen(ctx *fhttp.Context, who security.Subject, titleKey string, admin bool) (Screen, error) {
 	labels := m.Labels(translation.Locale(ctx.Ctx()))
-	page := fview.New(ctx, labels.T(titleKey))
+	page := hview.New(ctx, labels.T(titleKey))
 	page.Authenticated = who.ID != ""
-	return Screen{Page: page, Labels: labels, Prefix: m.cfg.Prefix}
+	sc := Screen{Page: page, Labels: labels, Prefix: m.cfg.Prefix, URLs: m.URLs()}
+	if m.cfg.Chrome != nil {
+		chrome, err := m.cfg.Chrome(ctx, ChromeRequest{Title: page.Title, Admin: admin, Subject: who, Page: page})
+		if err != nil {
+			return Screen{}, err
+		}
+		sc.chrome = chrome
+	}
+	return sc, nil
 }
 
 // today is the day it is in the application's timezone.
 func (m *Module) today() Day { return DayOf(time.Now(), m.cfg.Location) }
-
-// investorURL is the admin's page of one investor.
-func (m *Module) investorURL(id string) string {
-	return m.cfg.Prefix + adminSegment + "/investors/" + id
-}
-
-// adminSegment is where the admin's routes sit under the prefix. One prefix for
-// the whole package, so an application mounts it once and every address moves
-// with it.
-const adminSegment = "/admin"
 
 // PublishCommand is what an application runs to take ownership of the views
 // this package offers.
@@ -247,7 +268,7 @@ func (m *Module) Boot(context.Context) error {
 	}
 
 	registered := make(map[string]bool)
-	for _, name := range view.Registered() {
+	for _, name := range hview.Registered() {
 		registered[name] = true
 	}
 	var missing []string
@@ -315,14 +336,17 @@ func (m *Module) index(ctx *fhttp.Context) error {
 	if ctx.WantsJSON() {
 		return ctx.JSON(stdhttp.StatusOK, collectionFromPointers(records, cursor))
 	}
-	sc := m.screen(ctx, who, "screen.admin_investors_title")
+	sc, err := m.screen(ctx, who, "screen.admin_investors_title", true)
+	if err != nil {
+		return err
+	}
 	rows := make([]InvestorRow, 0, len(records))
 	for _, r := range records {
-		rows = append(rows, investorRow(m.cfg.Prefix, sc.Labels, r))
+		rows = append(rows, investorRow(m.URLs(), sc.Labels, r))
 	}
 	return ctx.View(ViewAdminInvestors, AdminInvestorsPageData{
-		Screen: sc, Rows: rows, StoreURL: m.cfg.Prefix + adminSegment + "/investors",
-		Next: cursor, NextURL: nextPageURL(m.cfg.Prefix+adminSegment+"/investors", cursor),
+		Screen: sc, Rows: rows, StoreURL: m.URLs().Investors(),
+		Next: cursor, NextURL: nextPageURL(m.URLs().Investors(), cursor),
 	})
 }
 
@@ -353,20 +377,23 @@ func (m *Module) show(ctx *fhttp.Context) error {
 	if err != nil {
 		return err
 	}
-	sc := m.screen(ctx, who, "screen.admin_investor_title")
+	sc, err := m.screen(ctx, who, "screen.admin_investor_title", true)
+	if err != nil {
+		return err
+	}
 	now := time.Now().In(m.cfg.Location)
-	base := m.investorURL(record.ID)
+	u := m.URLs()
 	return ctx.View(ViewAdminInvestor, AdminInvestorPageData{
 		Screen:              sc,
-		Investor:            investorRow(m.cfg.Prefix, sc.Labels, record),
+		Investor:            investorRow(m.URLs(), sc.Labels, record),
 		LegalName:           record.LegalName,
 		LegalRepresentative: record.LegalRepresentative,
-		Contracts:           contractRows(m.cfg.Prefix, sc.Labels, contracts),
-		Invoices:            invoiceRows(m.cfg.Prefix, sc.Labels, invoices),
-		ContractStoreURL:    base + "/contracts",
-		UpdateURL:           base,
-		SuspensionURL:       base + "/suspension",
-		ReportsURL:          base + "/reports",
+		Contracts:           contractRows(m.URLs(), sc.Labels, contracts),
+		Invoices:            invoiceRows(m.URLs(), sc.Labels, invoices),
+		ContractStoreURL:    u.InvestorContracts(record.ID),
+		UpdateURL:           u.Investor(record.ID),
+		SuspensionURL:       u.Suspension(record.ID),
+		ReportsURL:          u.InvestorReports(record.ID),
 		Year:                now.Year(),
 		Month:               int(now.Month()),
 		Today:               string(m.today()),
@@ -395,25 +422,29 @@ func (m *Module) mine(ctx *fhttp.Context) error {
 	if err != nil {
 		return err
 	}
-	sc := m.screen(ctx, who, "screen.dashboard_title")
+	sc, err := m.screen(ctx, who, "screen.dashboard_title", false)
+	if err != nil {
+		return err
+	}
 	now := time.Now().In(m.cfg.Location)
 	available, held, year, withdrawn := invoiceTotals(invoices, now.Year())
-	row := investorRow(m.cfg.Prefix, sc.Labels, record)
+	row := investorRow(m.URLs(), sc.Labels, record)
 	return ctx.View(ViewDashboard, DashboardPageData{
-		Screen:         sc,
-		Investor:       row.Name,
-		Document:       row.Document,
-		Available:      brl(available),
-		Held:           brl(held),
-		ReceivedYear:   brl(year),
-		WithdrawnTotal: brl(withdrawn),
-		Contracts:      contractRows(m.cfg.Prefix, sc.Labels, contracts),
-		Invoices:       invoiceRows(m.cfg.Prefix, sc.Labels, invoices),
-		Accounts:       accountOptions(accounts),
-		Year:           now.Year(),
-		Month:          int(now.Month()),
-		ReportsURL:     m.cfg.Prefix + "/me/reports",
-		PixURL:         m.cfg.Prefix + "/me/payout-accounts",
+		Screen:            sc,
+		Investor:          row.Name,
+		Document:          row.Document,
+		Available:         brl(available),
+		Held:              brl(held),
+		ReceivedYear:      brl(year),
+		WithdrawnTotal:    brl(withdrawn),
+		Contracts:         contractRows(m.URLs(), sc.Labels, contracts),
+		Invoices:          invoiceRows(m.URLs(), sc.Labels, invoices),
+		Accounts:          accountOptions(accounts),
+		Year:              now.Year(),
+		Month:             int(now.Month()),
+		ReportsURL:        m.URLs().MyReports(),
+		PixURL:            m.URLs().PayoutAccounts(),
+		PayoutAccountsURL: m.URLs().PayoutAccounts(),
 	})
 }
 
@@ -435,7 +466,7 @@ func (m *Module) store(ctx *fhttp.Context) error {
 		return err
 	}
 	if !ctx.WantsJSON() {
-		return ctx.Redirect(m.investorURL(record.ID))
+		return ctx.Redirect(m.URLs().Investor(record.ID))
 	}
 	return ctx.JSON(stdhttp.StatusCreated, resourceFromPointer(record))
 }
@@ -454,7 +485,7 @@ func (m *Module) update(ctx *fhttp.Context) error {
 		return err
 	}
 	if !ctx.WantsJSON() {
-		return ctx.Redirect(m.investorURL(record.ID))
+		return ctx.Redirect(m.URLs().Investor(record.ID))
 	}
 	return ctx.JSON(stdhttp.StatusOK, resourceFromPointer(record))
 }
@@ -467,7 +498,7 @@ func (m *Module) suspend(ctx *fhttp.Context) error {
 		return err
 	}
 	if !ctx.WantsJSON() {
-		return ctx.Redirect(m.investorURL(record.ID))
+		return ctx.Redirect(m.URLs().Investor(record.ID))
 	}
 	return ctx.JSON(stdhttp.StatusOK, resourceFromPointer(record))
 }
@@ -480,7 +511,7 @@ func (m *Module) reactivate(ctx *fhttp.Context) error {
 		return err
 	}
 	if !ctx.WantsJSON() {
-		return ctx.Redirect(m.investorURL(record.ID))
+		return ctx.Redirect(m.URLs().Investor(record.ID))
 	}
 	return ctx.JSON(stdhttp.StatusOK, resourceFromPointer(record))
 }
@@ -577,7 +608,7 @@ func (m *Module) storeContract(ctx *fhttp.Context) error {
 		return err
 	}
 	if !ctx.WantsJSON() {
-		return ctx.Redirect(m.investorURL(record.InvestorID))
+		return ctx.Redirect(m.URLs().Investor(record.InvestorID))
 	}
 	return ctx.JSON(stdhttp.StatusCreated, NewContractResource(*record, cleanProducts(in.Products)))
 }
@@ -597,7 +628,7 @@ func (m *Module) amendContract(ctx *fhttp.Context) error {
 		return err
 	}
 	if !ctx.WantsJSON() {
-		return ctx.Redirect(m.investorURL(record.InvestorID))
+		return ctx.Redirect(m.URLs().Investor(record.InvestorID))
 	}
 	return ctx.JSON(stdhttp.StatusCreated, NewContractResource(*record, cleanProducts(in.Products)))
 }
@@ -637,8 +668,11 @@ func (m *Module) statement(ctx *fhttp.Context) error {
 	if ctx.WantsJSON() {
 		return ctx.JSON(stdhttp.StatusOK, statementResource{st})
 	}
-	sc := m.screen(ctx, who, "screen.statement_title")
-	contract := contractRows(m.cfg.Prefix, sc.Labels, []ContractResource{NewContractResource(st.Contract, nil)})[0]
+	sc, err := m.screen(ctx, who, "screen.statement_title", false)
+	if err != nil {
+		return err
+	}
+	contract := contractRows(m.URLs(), sc.Labels, []ContractResource{NewContractResource(st.Contract, nil)})[0]
 	rows := statementRows(sc.Labels, st)
 	estimates := false
 	for _, r := range rows {
@@ -662,7 +696,10 @@ func (m *Module) projection(ctx *fhttp.Context) error {
 	if ctx.WantsJSON() {
 		return ctx.JSON(stdhttp.StatusOK, projectionResource{p})
 	}
-	sc := m.screen(ctx, who, "screen.projection_title")
+	sc, err := m.screen(ctx, who, "screen.projection_title", false)
+	if err != nil {
+		return err
+	}
 	costs := make([]ProjectedCostRow, 0, len(p.Costs))
 	for _, c := range p.Costs {
 		scope := sc.Labels.T("field.all_products")
@@ -676,7 +713,7 @@ func (m *Module) projection(ctx *fhttp.Context) error {
 	}
 	return ctx.View(ViewProjection, ProjectionPageData{
 		Screen:      sc,
-		Contract:    contractRows(m.cfg.Prefix, sc.Labels, []ContractResource{NewContractResource(p.Contract, nil)})[0],
+		Contract:    contractRows(m.URLs(), sc.Labels, []ContractResource{NewContractResource(p.Contract, nil)})[0],
 		PeriodStart: dayText(p.PeriodStart), PeriodEnd: dayText(p.PeriodEnd.AddDays(-1)),
 		Costs: costs, Gross: brl(p.Gross), Fees: brl(p.Fees), ProjectedCosts: brl(p.ProjectedCosts),
 		Ratio: ratioText(p.EstimatedCostRatioPPM), EstimatedNet: brl(p.EstimatedNet), EstimatedAmount: brl(p.EstimatedAmount),
@@ -693,10 +730,13 @@ func (m *Module) adminCosts(ctx *fhttp.Context) error {
 	if ctx.WantsJSON() {
 		return ctx.JSON(stdhttp.StatusOK, costsResource(views))
 	}
-	sc := m.screen(ctx, who, "screen.admin_costs_title")
+	sc, err := m.screen(ctx, who, "screen.admin_costs_title", true)
+	if err != nil {
+		return err
+	}
 	return ctx.View(ViewAdminCosts, AdminCostsPageData{
-		Screen: sc, Rows: costRows(m.cfg.Prefix, sc.Labels, views, m.today()),
-		StoreURL: m.cfg.Prefix + adminSegment + "/costs", Today: string(m.today()),
+		Screen: sc, Rows: costRows(m.URLs(), sc.Labels, views, m.today()),
+		StoreURL: m.URLs().AdminCosts(), Today: string(m.today()),
 	})
 }
 
@@ -724,13 +764,16 @@ func (m *Module) entries(ctx *fhttp.Context) error {
 		page = 1
 	}
 	pages := (total + m.cfg.PageSize - 1) / m.cfg.PageSize
-	sc := m.screen(ctx, who, "screen.admin_books_title")
-	base := m.cfg.Prefix + adminSegment
+	sc, err := m.screen(ctx, who, "screen.admin_books_title", true)
+	if err != nil {
+		return err
+	}
+	u := m.URLs()
 	return ctx.View(ViewAdminEntries, AdminEntriesPageData{
-		Screen: sc, Rows: entryRows(m.cfg.Prefix, sc.Labels, rows),
+		Screen: sc, Rows: entryRows(m.URLs(), sc.Labels, rows),
 		Query: q.Search, Kind: string(q.Kind), Sort: q.Sort, Dir: q.Dir,
 		CurrentPage: page, Pages: pages, Total: total,
-		URL: base + "/entries", StoreURL: base + "/entries", CloseDueURL: base + "/closings/due",
+		URL: u.Entries(), StoreURL: u.Entries(), CloseDueURL: u.CloseDue(),
 		Today: string(m.today()),
 	})
 }
@@ -768,7 +811,7 @@ func (m *Module) withdrawInvoice(ctx *fhttp.Context) error {
 		return err
 	}
 	if !ctx.WantsJSON() {
-		return ctx.Redirect(m.cfg.Prefix + "/me")
+		return ctx.Redirect(m.URLs().Me())
 	}
 	return ctx.JSON(stdhttp.StatusCreated, invoiceViewsResource([]InvoiceView{*view}))
 }
@@ -876,7 +919,7 @@ func (m *Module) storeEntry(ctx *fhttp.Context) error {
 		return err
 	}
 	if !ctx.WantsJSON() {
-		return ctx.Redirect(m.cfg.Prefix + adminSegment + "/entries")
+		return ctx.Redirect(m.URLs().Entries())
 	}
 	return ctx.JSON(stdhttp.StatusCreated, entryResource{*e})
 }
@@ -907,7 +950,7 @@ func (m *Module) reverseEntry(ctx *fhttp.Context) error {
 		return err
 	}
 	if !ctx.WantsJSON() {
-		return ctx.Redirect(m.cfg.Prefix + adminSegment + "/entries")
+		return ctx.Redirect(m.URLs().Entries())
 	}
 	return ctx.JSON(stdhttp.StatusCreated, entryResource{*e})
 }
@@ -929,7 +972,7 @@ func (m *Module) storeCost(ctx *fhttp.Context) error {
 		return err
 	}
 	if !ctx.WantsJSON() {
-		return ctx.Redirect(m.cfg.Prefix + adminSegment + "/costs")
+		return ctx.Redirect(m.URLs().AdminCosts())
 	}
 	return ctx.JSON(stdhttp.StatusCreated, costsResource([]CostView{{Item: *c}}))
 }
@@ -942,7 +985,7 @@ func (m *Module) endCost(ctx *fhttp.Context) error {
 		return err
 	}
 	if !ctx.WantsJSON() {
-		return ctx.Redirect(m.cfg.Prefix + adminSegment + "/costs")
+		return ctx.Redirect(m.URLs().AdminCosts())
 	}
 	return ctx.JSON(stdhttp.StatusOK, costsResource([]CostView{{Item: *c}}))
 }
@@ -959,7 +1002,7 @@ func (m *Module) closeContract(ctx *fhttp.Context) error {
 		return err
 	}
 	if !ctx.WantsJSON() {
-		return ctx.Redirect(m.investorURL(inv.InvestorID))
+		return ctx.Redirect(m.URLs().Investor(inv.InvestorID))
 	}
 	return ctx.JSON(stdhttp.StatusCreated, invoicesResource([]*Invoice{inv}))
 }
@@ -976,20 +1019,33 @@ func (m *Module) closeDue(ctx *fhttp.Context) error {
 		return err
 	}
 	if !ctx.WantsJSON() {
-		return ctx.Redirect(m.cfg.Prefix + adminSegment + "/entries")
+		return ctx.Redirect(m.URLs().Entries())
 	}
 	return ctx.JSON(stdhttp.StatusOK, closingsResource{closed: closed, failed: failed})
 }
 
-// storePixAccount declares a PIX key the asking investor is paid into.
-func (m *Module) storePixAccount(ctx *fhttp.Context) error {
+// storePayoutAccount declares an account the asking investor is paid into: a
+// PIX key, or a bank account when the form says kind=bank. A form without a
+// kind is a PIX key, which is what earlier releases took.
+func (m *Module) storePayoutAccount(ctx *fhttp.Context) error {
 	who, _ := ctx.User()
-	account, err := m.svc.AddPixAccount(ctx.Ctx(), who, ctx.Input("pix_key_type"), ctx.Input("pix_key"))
+	var (
+		account *wallet.PayoutAccount
+		err     error
+	)
+	if ctx.Input("kind") == PayoutBank {
+		account, err = m.svc.AddBankAccount(ctx.Ctx(), who, BankAccountRequest{
+			Bank: ctx.Input("bank"), Branch: ctx.Input("branch"),
+			Number: ctx.Input("account_number"), Type: ctx.Input("account_type"),
+		})
+	} else {
+		account, err = m.svc.AddPixAccount(ctx.Ctx(), who, ctx.Input("pix_key_type"), ctx.Input("pix_key"))
+	}
 	if err != nil {
 		return err
 	}
 	if !ctx.WantsJSON() {
-		return ctx.Redirect(m.cfg.Prefix + "/me")
+		return ctx.Redirect(m.URLs().Me())
 	}
 	return ctx.JSON(stdhttp.StatusCreated, fieldsResource{"id": account.ID, "kind": account.Kind, "label": account.Label})
 }
@@ -1032,10 +1088,13 @@ func (m *Module) withdrawals(ctx *fhttp.Context) error {
 		}
 		return ctx.JSON(stdhttp.StatusOK, fieldsResource{"items": items})
 	}
-	sc := m.screen(ctx, who, "screen.admin_withdrawals_title")
+	sc, err := m.screen(ctx, who, "screen.admin_withdrawals_title", true)
+	if err != nil {
+		return err
+	}
 	return ctx.View(ViewAdminWithdrawal, AdminWithdrawalsPageData{
-		Screen: sc, Rows: withdrawalRows(m.cfg.Prefix, sc.Labels, list, m.cfg.Location),
-		Status: string(status), URL: m.cfg.Prefix + adminSegment + "/withdrawals",
+		Screen: sc, Rows: withdrawalRows(m.URLs(), sc.Labels, list, m.cfg.Location),
+		Status: string(status), URL: m.URLs().Withdrawals(),
 	})
 }
 
@@ -1047,7 +1106,7 @@ func (m *Module) startWithdrawal(ctx *fhttp.Context) error {
 		return err
 	}
 	if !ctx.WantsJSON() {
-		return ctx.Redirect(m.cfg.Prefix + adminSegment + "/withdrawals")
+		return ctx.Redirect(m.URLs().Withdrawals())
 	}
 	return ctx.JSON(stdhttp.StatusOK, fieldsResource{"id": req.ID, "status": string(req.Status)})
 }
@@ -1074,7 +1133,7 @@ func (m *Module) payWithdrawal(ctx *fhttp.Context) error {
 		return err
 	}
 	if !ctx.WantsJSON() {
-		return ctx.Redirect(m.cfg.Prefix + adminSegment + "/withdrawals")
+		return ctx.Redirect(m.URLs().Withdrawals())
 	}
 	return ctx.JSON(stdhttp.StatusOK, fieldsResource{"id": req.ID, "status": string(req.Status)})
 }
@@ -1087,7 +1146,7 @@ func (m *Module) rejectWithdrawal(ctx *fhttp.Context) error {
 		return err
 	}
 	if !ctx.WantsJSON() {
-		return ctx.Redirect(m.cfg.Prefix + adminSegment + "/withdrawals")
+		return ctx.Redirect(m.URLs().Withdrawals())
 	}
 	return ctx.JSON(stdhttp.StatusOK, fieldsResource{"id": req.ID, "status": string(req.Status)})
 }

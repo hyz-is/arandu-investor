@@ -29,7 +29,19 @@ const (
 	ContractView security.Action = "investor.contract.view"
 	// ReportsView is reading an investor's invoices and income reports.
 	ReportsView security.Action = "investor.reports.view"
+	// AdminAction is being this package's admin, held as an action: what an
+	// application whose permissions arandu-permission administers puts in a
+	// group, so the people of that group are the admin without a role
+	// written on their accounts. It opens what AdminRole opens, and nothing
+	// more.
+	AdminAction security.Action = "investor.admin"
 )
+
+// IsAdmin says whether the subject is this package's admin: they carry
+// AdminRole, or AdminAction among the actions arandu-permission resolved for
+// them. The policy decides with it; an application asks it to decide what to
+// offer, never to authorize.
+func IsAdmin(s security.Subject) bool { return s.HasRole(AdminRole) || s.Can(AdminAction) }
 
 // AdminRole is the role an application grants to the people who run the
 // investors' money: finance, whoever registers investors, closes periods and
@@ -88,7 +100,7 @@ func (InvestorPolicy) Can(ctx context.Context, s security.Subject, a security.Ac
 	// this is wide inside one customer and reaches no further. The actions are
 	// enumerated rather than allowed wholesale, so an action somebody adds later
 	// is refused to everybody until a rule names it.
-	if s.HasRole(AdminRole) {
+	if IsAdmin(s) {
 		switch a {
 		case InvestorsManage, EntriesManage, CostsManage, DashboardView, ContractView, ReportsView:
 			return nil

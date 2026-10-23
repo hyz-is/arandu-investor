@@ -2,6 +2,40 @@
 
 ## Unreleased
 
+## v0.2.0
+
+Require Framework v0.62.1 and Hesape v0.78.0 (`go get` them with this
+release), then republish the views with `aru vendor:publish --tag=view
+--apply` and run `aru view:build`: the dashboard and the admin's withdrawals
+changed.
+
+- `Screen.Page` is `hesape/view.Page` now. A published view or a layout that
+  named `framework/view.Page`, or called `HasErrors`/`ErrorSummary` on it,
+  keeps working through `Screen`; code that built a `Screen` by hand passes a
+  `hesape/view.Page` (`view.New(ctx, title)` from `hesape/view`).
+- `FormState` embeds `hesape/view.Page`.
+- Nothing moved: route names and the default addresses are v0.1.1's. To serve
+  the routes in Portuguese, set `Config.Paths: investor.PortuguesePaths`.
+- To keep the admin out of the investors' side, set `Config.AdminPrefix` and
+  mount `Module.InvestorRoutes` and `Module.AdminRoutes` in their own groups
+  instead of `Module.Routes`.
+- What `apidiff` reports as incompatible, and what to write instead:
+  - `Screen.Page`, `FormState.Page`, `DashboardPageData.Page`,
+    `StatementPageData.Page`, `ProjectionPageData.Page`,
+    `AdminInvestorsPageData.Page`, `AdminInvestorPageData.Page`,
+    `AdminCostsPageData.Page`, `AdminEntriesPageData.Page` and
+    `AdminWithdrawalsPageData.Page` are `hesape/view.Page`; build them with
+    hesape's `view.New`.
+  - `github.com/arandu-io/framework/view.Page.WithToken` promoted through those
+    pages now answers `hesape/view.Page`.
+  - `Config` and `Module` are no longer comparable: `Config` holds the
+    middleware and the chrome function. Compare their fields, never the values.
+  - `New` and `(*Module).Routes` keep their signatures; the framework types in
+    them are the v0.62.1 ones.
+- An admin may now hold `investor.AdminAction` through arandu-permission
+  instead of the role `investor.admin`. arandu-wallet still asks for its role
+  `wallet.operator` to pay a withdrawal or deposit an invoice.
+
 ## v0.1.1
 
 Run `aru migrate` for arandu-wallet v0.13.0's `20261013_0018_add_wallet_payout_via`.

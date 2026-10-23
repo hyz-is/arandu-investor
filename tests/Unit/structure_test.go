@@ -252,9 +252,12 @@ func TestHandlersLeaveTheSubjectAndTheStatusToTheFramework(t *testing.T) {
 			methods[function.Name.Name] = function
 		}
 	}
-	routes := methods["Routes"]
+	// Routes, InvestorRoutes and AdminRoutes all register through register,
+	// which mounts the guard and walks the route table; the table's handlers
+	// are the method values the handlers method maps each route name to.
+	routes := methods["register"]
 	if routes == nil {
-		t.Fatal("Module has no Routes method")
+		t.Fatal("Module has no register method")
 	}
 
 	// The guard is mounted on the router before the first route is registered
@@ -289,7 +292,7 @@ func TestHandlersLeaveTheSubjectAndTheStatusToTheFramework(t *testing.T) {
 		return true
 	})
 
-	handlers := registeredHandlers(routes)
+	handlers := registeredHandlers(methods["handlers"])
 	if len(handlers) == 0 {
 		t.Fatal("Routes registers no Module handler")
 	}
@@ -487,7 +490,7 @@ func inspectServiceBoundary(t *testing.T, root string) {
 				continue
 			}
 			methods[declaration.Name.Name] = declaration
-			if declaration.Name.Name == "Routes" {
+			if declaration.Name.Name == "handlers" {
 				routes = declaration
 			}
 		}
@@ -579,13 +582,25 @@ func productionGoFiles(t *testing.T, root string) []parsedGoFile {
 	return files
 }
 
-// registeredHandlers is every method of the receiver handed to a call that
+// registeredHandlers is every method of the receiver the handlers method maps
+// a route name to, or handed to a call that
 // registers a route. Only those calls: the guard is mounted with a call that
 // takes a field of the receiver too, and a field is not a handler.
 func registeredHandlers(routes *ast.FuncDecl) map[string]bool {
 	handlers := map[string]bool{}
+	if routes == nil {
+		return handlers
+	}
 	receiver := receiverName(routes)
 	ast.Inspect(routes.Body, func(node ast.Node) bool {
+		if pair, ok := node.(*ast.KeyValueExpr); ok {
+			if handler, ok := pair.Value.(*ast.SelectorExpr); ok {
+				if owner, ok := handler.X.(*ast.Ident); ok && owner.Name == receiver {
+					handlers[handler.Sel.Name] = true
+				}
+			}
+			return true
+		}
 		call, ok := node.(*ast.CallExpr)
 		if !ok || !routeVerbs[selectorName(call.Fun)] {
 			return true

@@ -70,7 +70,14 @@
         "pix_key": "PIX key",
         "pix_key_type": "Key type",
         "share_percent": "Share (%)",
-        "source": "Source"
+        "source": "Source",
+        "bank": "Bank",
+        "branch": "Branch",
+        "account_number": "Account",
+        "account_type": "Account type",
+        "payout_kind": "Paid by",
+        "accounts": "Payout accounts",
+        "actions": "Actions"
     },
     "screen": {
         "dashboard_title": "Investor dashboard",
@@ -130,7 +137,17 @@
         "pix_title": "Payout account",
         "products_hint": "Identifiers separated by commas. Leave blank for the whole application.",
         "user_hint": "The identifier of the user who will sign in to the panel.",
-        "withdraw_lead": "Each invoice is withdrawn whole, with no minimum. It is paid by PIX into the account chosen."
+        "withdraw_lead": "Each invoice is withdrawn whole, with no minimum. It is paid by PIX into the account chosen.",
+        "accounts_title": "Payout accounts",
+        "accounts_lead": "Where the team pays your withdrawals. The account is held in the name and document of your registration.",
+        "accounts_empty": "No account yet.",
+        "bank_title": "Bank account",
+        "withdraw_title": "Request a withdrawal",
+        "withdraw_none": "No invoice can be withdrawn now.",
+        "withdrawals_title": "Your withdrawals",
+        "withdrawals_lead": "Each request with the state of its payment. Once the team pays, the receipt is here.",
+        "pending_title": "Requests to pay",
+        "pending_empty": "No request is waiting to be paid."
     },
     "control": {
         "save": "Save",
@@ -153,7 +170,11 @@
         "statement": "Statement",
         "projection": "Projection",
         "columns": "Columns",
-        "all": "All"
+        "all": "All",
+        "view_receipt": "View receipt",
+        "request_withdrawal": "Request withdrawal",
+        "add_pix": "Add PIX key",
+        "add_bank": "Add bank account"
     },
     "kind": {
         "sale": "Sale",
@@ -217,5 +238,31 @@
     "source": {
         "api": "Application",
         "manual": "Manual"
+    },
+    "payout": {
+        "pix": "PIX",
+        "bank": "Bank account"
+    },
+    "bank": {
+        "checking": "Checking",
+        "savings": "Savings"
+    },
+    "activity": {
+        "investor_created": "Investor registered",
+        "investor_updated": "Investor changed",
+        "investor_suspended": "Investor suspended",
+        "investor_reactivated": "Investor reactivated",
+        "contract_created": "Investor contract registered",
+        "contract_amended": "Contract amendment registered",
+        "entry_recorded": "Manual entry recorded",
+        "entry_reversed": "Entry reversed",
+        "cost_created": "Cost declared",
+        "cost_ended": "Cost ended",
+        "period_closed": "Contract period closed",
+        "payout_account_added": "Payout account added",
+        "withdrawal_requested": "Withdrawal requested by the investor",
+        "withdrawal_processing": "Withdrawal payment started",
+        "withdrawal_paid": "Withdrawal marked paid, with receipt",
+        "withdrawal_rejected": "Withdrawal rejected"
     }
 }

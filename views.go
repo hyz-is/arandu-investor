@@ -3,10 +3,12 @@ package investor
 import (
 	"embed"
 	"io/fs"
+	"log/slog"
 	"strings"
 
 	"github.com/arandu-io/framework/foundation"
-	"github.com/arandu-io/framework/view"
+	fview "github.com/arandu-io/framework/view"
+	hview "github.com/arandu-io/hesape/view"
 )
 
 // The view sources this package hands to the project that installs it.
@@ -185,21 +187,94 @@ const (
 
 // FormState is what a form field reads from the page it is drawn on: what was
 // typed before a refusal, and the message for each field.
-type FormState struct{ view.Page }
+type FormState struct{ hview.Page }
 
 // FieldError is the first message for one field, empty when it was accepted.
 func (f FormState) FieldError(name string) string { return f.Page.FieldError(name) }
 
-// Screen is what every page of this package carries: the application's chrome,
-// the sentences, and where the package is mounted.
+// Screen is what every page of this package carries: the page hesape's
+// view.New builds, the application's chrome, the sentences, and where the
+// package is mounted.
+//
+// It embeds hesape's view.Page, so every page of this package is a
+// hesape/view.Layout -- what the layouts of an application on Arandu
+// framework v0.62 and newer assert -- and it answers HasErrors and
+// ErrorSummary as well, so it is also the framework/view.Layout an older
+// layout asks for.
 type Screen struct {
-	view.Page
+	hview.Page
 	Labels Labels
+	// Prefix is where the investor's routes are mounted. URLs has every
+	// address; Prefix is kept for a published view that still reads it.
 	Prefix string
+	// URLs are the addresses of the package's routes.
+	URLs URLs
+
+	chrome any
 }
+
+// Compile-time proof that a page of this package fits both layout contracts.
+var (
+	_ hview.Layout   = Screen{}
+	_ fview.Layout   = Screen{}
+	_ slog.LogValuer = Screen{}
+)
+
+// Chrome is what Config.Chrome answered for this screen: the application's
+// sidebar, navigation and account menu, in whatever type its layout draws
+// from. A layout asserts that type on it; nil when Config.Chrome is nil.
+func (s Screen) Chrome() any { return s.chrome }
+
+// HasErrors says whether the attempt that landed here was rejected:
+// framework/view.Layout's name for hesape's Any.
+func (s Screen) HasErrors() bool { return s.Page.Any() }
+
+// ErrorSummary is one line per rejected field: framework/view.Layout's name
+// for hesape's All.
+func (s Screen) ErrorSummary() []string { return s.Page.All() }
+
+// FieldErrors is every message for one field.
+func (s Screen) FieldErrors(name string) []string { return s.Page.Get(name) }
+
+// MarshalJSON writes the page with the CSRF token redacted, as
+// framework/view.Page does: a page dumped for debugging never publishes the
+// token. It answers for every page data that embeds Screen.
+func (s Screen) MarshalJSON() ([]byte, error) { return framePage(s.Page).MarshalJSON() }
+
+// LogValue is the page as a log line carries it, the token redacted.
+func (s Screen) LogValue() slog.Value { return framePage(s.Page).LogValue() }
 
 // Form is the form state of the page.
 func (s Screen) Form() FormState { return FormState{Page: s.Page} }
+
+// HasErrors says whether the attempt that landed here was rejected.
+func (f FormState) HasErrors() bool { return f.Page.Any() }
+
+// ErrorSummary is one line per rejected field.
+func (f FormState) ErrorSummary() []string { return f.Page.All() }
+
+// FieldErrors is every message for one field.
+func (f FormState) FieldErrors(name string) []string { return f.Page.Get(name) }
+
+// MarshalJSON writes the form state with the CSRF token redacted.
+func (f FormState) MarshalJSON() ([]byte, error) { return framePage(f.Page).MarshalJSON() }
+
+// LogValue is the form state as a log line carries it, the token redacted.
+func (f FormState) LogValue() slog.Value { return framePage(f.Page).LogValue() }
+
+// framePage copies a hesape page into framework/view.Page, by name, for the
+// two methods that redact the token there.
+func framePage(p hview.Page) fview.Page {
+	return fview.Page{
+		Title: p.Title, Description: p.Description, Canonical: p.Canonical, AppName: p.AppName, Token: p.Token,
+		Authenticated: p.Authenticated, UserName: p.UserName,
+		HomeURL: p.HomeURL, LoginURL: p.LoginURL, LogoutURL: p.LogoutURL, RegisterURL: p.RegisterURL,
+		PanelURL: p.PanelURL, AdminURL: p.AdminURL,
+		Impersonating: p.Impersonating, ImpersonationActs: p.ImpersonationActs, Impersonator: p.Impersonator,
+		LeaveImpersonationURL: p.LeaveImpersonationURL,
+		Path:                  p.Path, Errors: p.Errors, Old: p.Old, Messages: p.Messages,
+	}
+}
 
 // ContractRow is one contract as a screen shows it.
 type ContractRow struct {
@@ -218,8 +293,9 @@ type InvoiceRow struct {
 	WithdrawURL, ReceiptURL, RejectedReason            string
 }
 
-// AccountOption is one payout account a withdrawal can be paid into.
-type AccountOption struct{ ID, Label string }
+// AccountOption is one payout account a withdrawal can be paid into: its
+// label, and its kind, PayoutPix or PayoutBank.
+type AccountOption struct{ ID, Label, Kind string }
 
 // DashboardPageData is the investor's own panel.
 type DashboardPageData struct {
@@ -231,7 +307,10 @@ type DashboardPageData struct {
 	Invoices                                      []InvoiceRow
 	Accounts                                      []AccountOption
 	Year, Month                                   int
-	ReportsURL, PixURL                            string
+	// ReportsURL is the base of the reports; PixURL, the address a payout
+	// account is declared at, is the same as PayoutAccountsURL and kept for a
+	// published view that still reads it.
+	ReportsURL, PixURL, PayoutAccountsURL string
 }
 
 // StatementRow is one line of a statement.

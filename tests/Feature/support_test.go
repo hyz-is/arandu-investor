@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	hedatabase "github.com/arandu-io/hesape/database"
 	sqliteconnector "github.com/arandu-io/hesape/database/connectors/sqlite"
 
+	activitylog "github.com/hyz-is/arandu-activitylog"
 	investor "github.com/hyz-is/arandu-investor"
 	wallet "github.com/hyz-is/arandu-wallet"
 )
@@ -21,12 +23,26 @@ import (
 // error when the lock is held.
 const dsn = "?_txlock=immediate&_pragma=journal_mode(WAL)&_pragma=busy_timeout(20000)"
 
+// signedIn are the subjects the tests started sessions for, by identifier:
+// what a session store's resolver answers, as an application's reads the
+// account's roles and actions again on every request.
+var signedIn sync.Map
+
+// resolveSubjects is the session store's resolver for these tests.
+func resolveSubjects(_ context.Context, who security.Subject) (security.Subject, error) {
+	if s, ok := signedIn.Load(who.Tenant + "/" + who.ID); ok {
+		return s.(security.Subject), nil
+	}
+	return who, nil
+}
+
 // tenant is the customer every test runs as, except where a second one is the
 // point.
 const tenant = "acme"
 
 // world is one application with this package installed over a real database.
 type world struct {
+	sql     *sql.DB
 	db      *data.DB
 	module  *investor.Module
 	svc     *investor.InvestorService
@@ -52,21 +68,27 @@ func install(t *testing.T) world {
 	})
 	db := data.Wrap(handle, data.DialectSQLite)
 	sessions := security.NewSessionStore([]byte(appKey), time.Hour, false, security.NewMemoryBackend())
+	sessions.ResolveSubjects(resolveSubjects)
 	walletModule, err := wallet.New(wallet.Config{Tenant: tenant, Receipts: testDisk(t)}, db, sessions)
 	if err != nil {
 		t.Fatalf("building arandu-wallet: %v", err)
 	}
-	module, err := investor.New(investor.Config{Files: testDisk(t), Wallet: walletModule.Service()}, db, sessions)
+	activity, err := activitylog.New(activitylog.Config{Tenant: tenant}, db, sessions)
+	if err != nil {
+		t.Fatalf("building arandu-activitylog: %v", err)
+	}
+	module, err := investor.New(investor.Config{Files: testDisk(t), Wallet: walletModule.Service(), Activity: activity.Logger()}, db, sessions)
 	if err != nil {
 		t.Fatalf("building the module: %v", err)
 	}
 	migrations := hedatabase.ForMigrations(connection)
-	for _, migration := range append(walletModule.Migrations(), module.Migrations()...) {
+	all := append(walletModule.Migrations(), activity.Migrations()...)
+	for _, migration := range append(all, module.Migrations()...) {
 		if err := migration.Up(context.Background(), migrations); err != nil {
 			t.Fatalf("applying %s: %v", migration.GetName(), err)
 		}
 	}
-	return world{db: db, module: module, svc: module.Service(), wallets: walletModule.Service()}
+	return world{sql: handle, db: db, module: module, svc: module.Service(), wallets: walletModule.Service()}
 }
 
 // admin is the finance team of the tenant: this package's admin, and

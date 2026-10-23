@@ -114,7 +114,14 @@ func (s *InvestorService) RecordManualEntry(ctx context.Context, actor security.
 	if existing, err := Entries(s.db).Where("external_ref", "=", ref).First(ctx, g); err != nil || existing != nil {
 		return existing, err
 	}
-	return s.insertEntry(ctx, actor, g, in, SourceManual)
+	entry, err := s.insertEntry(ctx, actor, g, in, SourceManual)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.record(ctx, g, actor, EventEntryRecorded, "investor_entry", entry.ID, map[string]any{"kind": string(entry.Kind), "gross": entry.Gross, "fee": entry.Fee, "external_ref": entry.ExternalRef}); err != nil {
+		return nil, err
+	}
+	return entry, nil
 }
 
 // insertEntry writes a validated, authorized entry the caller found was not
@@ -202,6 +209,9 @@ func (s *InvestorService) ReverseEntry(ctx context.Context, actor security.Subje
 	record.CreatedBy = actor.ID
 	record.CreatedAt, record.UpdatedAt = now, now
 	if _, err := record.Save(ctx, g); err != nil {
+		return nil, err
+	}
+	if err := s.record(ctx, g, actor, EventEntryReversed, "investor_entry", original.ID, map[string]any{"reversal_id": record.ID, "reason": strings.TrimSpace(reason)}); err != nil {
 		return nil, err
 	}
 	return record, nil
@@ -308,6 +318,9 @@ func (s *InvestorService) CreateCost(ctx context.Context, actor security.Subject
 	if err != nil {
 		return nil, err
 	}
+	if err := s.record(ctx, g, actor, EventCostCreated, "investor_cost", record.ID, map[string]any{"name": record.Name, "amount": record.Amount, "recurrence": string(record.Recurrence)}); err != nil {
+		return nil, err
+	}
 	return record, nil
 }
 
@@ -335,6 +348,9 @@ func (s *InvestorService) EndCost(ctx context.Context, actor security.Subject, c
 	record.EndsOn = ends
 	record.UpdatedAt = s.now()
 	if _, err := record.Save(ctx, g); err != nil {
+		return nil, err
+	}
+	if err := s.record(ctx, g, actor, EventCostEnded, "investor_cost", record.ID, map[string]any{"ends_on": string(record.EndsOn)}); err != nil {
 		return nil, err
 	}
 	return record, nil

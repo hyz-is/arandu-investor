@@ -20,7 +20,7 @@ import (
 // line changes and never because somebody published something. Moving it is
 // how a stricter compiler is taken on: raise it, run the suite, and fix the
 // view it refuses here rather than in every application that publishes it.
-const viewCompiler = "github.com/arandu-io/aru@v0.72.2"
+const viewCompiler = "github.com/arandu-io/aru@v0.74.0"
 
 // TestEveryPublishedViewCompiles publishes the views into a project of their
 // own, builds them with the view compiler an application runs, and compiles
@@ -143,7 +143,7 @@ func main() {
 	view.RegisterLayout("layouts.app", func(w io.Writer, _ any, sections map[string]func(io.Writer) error) error {
 		return sections["content"](w)
 	})
-	sc := investor.Screen{Labels: investor.Labels{Locale: "pt-BR"}, Prefix: "/investidor"}
+	sc := investor.Screen{Labels: investor.Labels{Locale: "pt-BR"}, Prefix: "/investidor", URLs: investor.NewURLs("/investidor", "", investor.Paths{})}
 	contract := investor.ContractRow{ID: "c1", Number: "C-001", Share: "15,00%", Products: "Toda a aplicação", Status: "Ativo",
 		Starts: "01/10/2026", Ends: "—", Version: 1, BillingDay: 20, Active: true,
 		StatementURL: "/investidor/contracts/c1/statement", ProjectionURL: "/investidor/contracts/c1/projection",
@@ -163,8 +163,9 @@ func main() {
 			Available: "R$ 129,00", Held: "R$ 0,00", ReceivedYear: "R$ 129,00", WithdrawnTotal: "R$ 0,00",
 			Contracts: []investor.ContractRow{contract}, Invoices: []investor.InvoiceRow{invoice},
 			Accounts: []investor.AccountOption{{ID: "acc-1", Label: "PIX ana@example.com"}}, Year: 2026, Month: 10,
-			ReportsURL: "/investidor/me/reports", PixURL: "/investidor/me/payout-accounts"},
-			[]string{"Disponível", "R$ 129,00", "C-001", "PIX ana@example.com", "/investidor/invoices/i1/withdrawal", "/investidor/me/reports/2026/10", "Chave PIX"}},
+			ReportsURL: "/investidor/me/reports", PixURL: "/investidor/me/payout-accounts", PayoutAccountsURL: "/investidor/me/payout-accounts"},
+			[]string{"Disponível", "R$ 129,00", "C-001", "PIX ana@example.com", "/investidor/invoices/i1/withdrawal", "/investidor/me/reports/2026/10",
+				"Chave PIX", "Solicitar saque", "Ver comprovante", "/investidor/invoices/i1/receipt", "/investidor/me/payout-accounts", "account_number"}},
 		{investor.ViewStatement, investor.StatementPageData{Screen: sc, Contract: contract,
 			Rows: []investor.StatementRow{{ID: "e1", Day: "05/10/2026", Product: "loccrm", Kind: "Venda", Description: "Plano",
 				Gross: "R$ 199,00", Fee: "R$ 7,98", Cost: "R$ 19,90", Net: "R$ 171,12", Estimate: true}},
@@ -200,7 +201,8 @@ func main() {
 				{ID: "w2", Investor: "Bruno", Amount: "R$ 50,00", Status: "Em pagamento", StatusKey: "processing", Processing: true,
 					PayURL: "/investidor/admin/withdrawals/w2/payment", RejectURL: "/investidor/admin/withdrawals/w2/rejection"},
 			}},
-			[]string{"Saques dos investidores", "/investidor/admin/withdrawals/w1/processing", "/investidor/admin/withdrawals/w2/payment", "end_to_end_id"}},
+			[]string{"Saques dos investidores", "/investidor/admin/withdrawals/w1/processing", "/investidor/admin/withdrawals/w2/payment", "end_to_end_id",
+				"Marcar como pago", "multipart/form-data", "/investidor/admin/withdrawals/w1/rejection"}},
 	}
 	failed := false
 	for _, p := range pages {

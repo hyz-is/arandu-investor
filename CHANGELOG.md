@@ -10,6 +10,55 @@ a release is corrected by another release and never by moving a tag.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-23
+
+### Fixed
+
+- Every screen answered 500 under Arandu Framework v0.62 and Hesape v0.78:
+  the layouts there assert `hesape/view.Layout` (`Any`, `All`, `Flashed`,
+  `FieldError`, `OldOr`), and the pages embedded `framework/view.Page`, which
+  answers none of them. `Screen` now embeds `hesape/view.Page`, and answers
+  `HasErrors` and `ErrorSummary` as well, so a page fits both contracts.
+
+### Added
+
+- `Config.Paths`, the segments every route is built from, with
+  `DefaultPaths` (English, the addresses of v0.1) and `PortuguesePaths`
+  (`/contratos`, `/faturas/{id}/saque`, `/faturas/{id}/comprovante`,
+  `/conta-de-recebimento`, `/investidores`, `/saques`...); `Config.AdminPrefix`,
+  where the admin's routes are mounted when they belong on another side of the
+  application.
+- `Module.InvestorRoutes` and `Module.AdminRoutes`, each half of `Routes`, for
+  an application that mounts the investor's screens in its panel and the
+  admin's in its operator console with each side's guards; `Config.Middleware`
+  and `Config.AdminMiddleware`, run after `RequireAuth`.
+- `Config.Chrome` and `ChromeRequest`: what the application's layout draws
+  around a screen, carried on the page as `Screen.Chrome()`.
+- `Module.URLs()`, `NewURLs` and `URLs`: every address of the package, for an
+  application that links to them; `Screen.URLs`.
+- `AdminAction` (`investor.admin`): the admin held as an arandu-permission
+  action, opening what `AdminRole` opens; `IsAdmin`.
+- Bank accounts beside PIX keys: `AddBankAccount`, `BankAccountRequest`,
+  `BankAccountTypes`, `PayoutPix`, `PayoutBank`; the payout account route takes
+  `kind=bank` with `bank`, `branch`, `account_number` and `account_type`.
+- `Config.Activity`: every act that changes something is recorded in
+  arandu-activitylog under the Grant it was authorized with, in the log
+  `ActivityLogName` (`investor`), with the events `Event*`.
+- The investor's panel lists the payout accounts, the invoices that can be
+  asked for with "Solicitar saque", and every withdrawal with its state and
+  "Ver comprovante"; the admin's queue is a data table with "Iniciar
+  pagamento", "Marcar como pago" with the receipt, and "Rejeitar".
+  `Screen.WithdrawForm`, `Screen.PayForm`, `Screen.BankAccountTypeOptions`;
+  `DashboardPageData.PayoutAccountsURL`; `AccountOption.Kind`.
+
+### Changed
+
+- Requires Framework v0.62.1, Hesape v0.78.0, Kyse v0.41.0, arandu-wallet
+  v0.17.0, arandu-br v0.4.1 and arandu-activitylog v0.4.0; the manifest's
+  framework floor is `>= 0.62`.
+- `Screen` embeds `hesape/view.Page` instead of `framework/view.Page`, and
+  `FormState` likewise. Route names and the default addresses are unchanged.
+
 ## [0.1.1] - 2026-10-13
 
 ### Fixed

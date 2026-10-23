@@ -70,7 +70,14 @@
         "pix_key": "Chave PIX",
         "pix_key_type": "Tipo de chave",
         "share_percent": "Participação (%)",
-        "source": "Origem"
+        "source": "Origem",
+        "bank": "Banco",
+        "branch": "Agência",
+        "account_number": "Conta",
+        "account_type": "Tipo de conta",
+        "payout_kind": "Forma de recebimento",
+        "accounts": "Contas de recebimento",
+        "actions": "Ações"
     },
     "screen": {
         "dashboard_title": "Painel do investidor",
@@ -130,7 +137,17 @@
         "pix_title": "Conta de recebimento",
         "products_hint": "Identificadores separados por vírgula. Em branco vale para toda a aplicação.",
         "user_hint": "Identificador do usuário que vai acessar o painel.",
-        "withdraw_lead": "Cada fatura é sacada inteira, sem valor mínimo. O pagamento é feito por PIX na conta escolhida."
+        "withdraw_lead": "Cada fatura é sacada inteira, sem valor mínimo. O pagamento é feito por PIX na conta escolhida.",
+        "accounts_title": "Contas de recebimento",
+        "accounts_lead": "Onde a equipe paga os seus saques. A conta fica no nome e no documento do seu cadastro.",
+        "accounts_empty": "Nenhuma conta cadastrada ainda.",
+        "bank_title": "Conta bancária",
+        "withdraw_title": "Solicitar saque",
+        "withdraw_none": "Nenhuma fatura disponível para saque agora.",
+        "withdrawals_title": "Seus saques",
+        "withdrawals_lead": "Cada pedido com a situação do pagamento. Quando a equipe paga, o comprovante fica aqui.",
+        "pending_title": "Pedidos a pagar",
+        "pending_empty": "Nenhum pedido esperando pagamento."
     },
     "control": {
         "save": "Salvar",
@@ -153,7 +170,11 @@
         "statement": "Extrato",
         "projection": "Projeção",
         "columns": "Colunas",
-        "all": "Todos"
+        "all": "Todos",
+        "view_receipt": "Ver comprovante",
+        "request_withdrawal": "Solicitar saque",
+        "add_pix": "Cadastrar chave PIX",
+        "add_bank": "Cadastrar conta bancária"
     },
     "kind": {
         "sale": "Venda",
@@ -217,5 +238,31 @@
     "source": {
         "api": "Aplicação",
         "manual": "Manual"
+    },
+    "payout": {
+        "pix": "PIX",
+        "bank": "Conta bancária"
+    },
+    "bank": {
+        "checking": "Conta corrente",
+        "savings": "Conta poupança"
+    },
+    "activity": {
+        "investor_created": "Investidor cadastrado",
+        "investor_updated": "Dados do investidor alterados",
+        "investor_suspended": "Investidor suspenso",
+        "investor_reactivated": "Investidor reativado",
+        "contract_created": "Contrato do investidor registrado",
+        "contract_amended": "Aditivo de contrato registrado",
+        "entry_recorded": "Lançamento manual registrado",
+        "entry_reversed": "Lançamento estornado",
+        "cost_created": "Custo declarado",
+        "cost_ended": "Custo encerrado",
+        "period_closed": "Período do contrato fechado",
+        "payout_account_added": "Conta de recebimento cadastrada",
+        "withdrawal_requested": "Saque solicitado pelo investidor",
+        "withdrawal_processing": "Pagamento do saque iniciado",
+        "withdrawal_paid": "Saque marcado como pago, com comprovante",
+        "withdrawal_rejected": "Saque rejeitado"
     }
 }

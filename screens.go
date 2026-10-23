@@ -97,7 +97,7 @@ func (l Labels) tableLines() components.DataTableLines {
 func (s Screen) TableLines() components.DataTableLines { return s.Labels.tableLines() }
 
 // contractRows are an investor's contracts, the version in force first.
-func contractRows(prefix string, l Labels, list []ContractResource) []ContractRow {
+func contractRows(u URLs, l Labels, list []ContractResource) []ContractRow {
 	rows := make([]ContractRow, 0, len(list))
 	for _, r := range list {
 		c := r.Contract()
@@ -109,13 +109,13 @@ func contractRows(prefix string, l Labels, list []ContractResource) []ContractRo
 			ID: c.ID, Number: c.Number, Share: percentText(c.ShareBps), Products: products,
 			Status: l.T("status." + string(c.Status)), Starts: dayText(c.StartsOn), Ends: dayText(c.EndsOn),
 			Version: c.Version, BillingDay: c.BillingDay, Active: c.Status == ContractActive,
-			StatementURL:  prefix + "/contracts/" + c.ID + "/statement",
-			ProjectionURL: prefix + "/contracts/" + c.ID + "/projection",
-			CloseURL:      prefix + adminSegment + "/contracts/" + c.ID + "/closings",
-			AmendURL:      prefix + adminSegment + "/contracts/" + c.ID + "/amendments",
+			StatementURL:  u.Statement(c.ID),
+			ProjectionURL: u.Projection(c.ID),
+			CloseURL:      u.Close(c.ID),
+			AmendURL:      u.Amend(c.ID),
 		}
 		if c.FileKey != "" {
-			row.FileURL = prefix + "/contracts/" + c.ID + "/file"
+			row.FileURL = u.ContractFile(c.ID)
 		}
 		rows = append(rows, row)
 	}
@@ -123,7 +123,7 @@ func contractRows(prefix string, l Labels, list []ContractResource) []ContractRo
 }
 
 // invoiceRows are an investor's invoices, as the panel and the admin show them.
-func invoiceRows(prefix string, l Labels, views []InvoiceView) []InvoiceRow {
+func invoiceRows(u URLs, l Labels, views []InvoiceView) []InvoiceRow {
 	rows := make([]InvoiceRow, 0, len(views))
 	for _, v := range views {
 		inv := v.Invoice
@@ -133,14 +133,14 @@ func invoiceRows(prefix string, l Labels, views []InvoiceView) []InvoiceRow {
 			Share: percentText(inv.ShareBps), Amount: brl(inv.Amount),
 			Status: l.Status(inv.Status), StatusKey: string(inv.Status),
 			Withdrawable: v.Withdrawable(),
-			WithdrawURL:  prefix + "/invoices/" + inv.ID + "/withdrawal",
+			WithdrawURL:  u.Withdraw(inv.ID),
 		}
 		if w := v.Withdrawal; w != nil {
 			row.Withdrawal = l.T("withdrawal." + string(w.Status))
 			row.WithdrawalKey = string(w.Status)
 			row.RejectedReason = w.RejectedReason
 			if w.Status == wallet.WithdrawalPaid && w.ReceiptKey != "" {
-				row.ReceiptURL = prefix + "/invoices/" + inv.ID + "/receipt"
+				row.ReceiptURL = u.Receipt(inv.ID)
 			}
 		}
 		rows = append(rows, row)
@@ -175,7 +175,7 @@ func accountOptions(accounts []*wallet.PayoutAccount) []AccountOption {
 		if a == nil || bool(a.Disabled) {
 			continue
 		}
-		out = append(out, AccountOption{ID: a.ID, Label: a.Label})
+		out = append(out, AccountOption{ID: a.ID, Label: a.Label, Kind: a.Kind})
 	}
 	return out
 }
@@ -227,6 +227,15 @@ func (s Screen) RecurrenceOptions() []components.SelectOption {
 	return out
 }
 
+// BankAccountTypeOptions are the kinds of bank account.
+func (s Screen) BankAccountTypeOptions() []components.SelectOption {
+	out := make([]components.SelectOption, 0, len(BankAccountTypes))
+	for _, t := range BankAccountTypes {
+		out = append(out, components.SelectOption{Value: t, Label: s.Labels.T("bank." + t)})
+	}
+	return out
+}
+
 // PersonOptions are the kinds of person an investor can be.
 func (s Screen) PersonOptions() []components.SelectOption {
 	return []components.SelectOption{
@@ -245,7 +254,7 @@ func (s Screen) PixKeyOptions() []components.SelectOption {
 }
 
 // investorRow is one investor as the registry shows it.
-func investorRow(prefix string, l Labels, i *Investor) InvestorRow {
+func investorRow(u URLs, l Labels, i *Investor) InvestorRow {
 	doc := br.CPF(i.Document)
 	if i.Kind == Company {
 		doc = br.CNPJ(i.Document)
@@ -253,12 +262,12 @@ func investorRow(prefix string, l Labels, i *Investor) InvestorRow {
 	return InvestorRow{
 		ID: i.ID, Name: i.Name, Document: doc, Kind: l.T("person." + string(i.Kind)), Email: i.Email,
 		Status: l.T("status." + string(i.Status)), User: i.UserID, Active: i.IsActive(),
-		URL: prefix + adminSegment + "/investors/" + i.ID,
+		URL: u.Investor(i.ID),
 	}
 }
 
 // costRows are the declared costs.
-func costRows(prefix string, l Labels, views []CostView, today Day) []CostRow {
+func costRows(u URLs, l Labels, views []CostView, today Day) []CostRow {
 	rows := make([]CostRow, 0, len(views))
 	for _, v := range views {
 		c := v.Item
@@ -269,7 +278,7 @@ func costRows(prefix string, l Labels, views []CostView, today Day) []CostRow {
 		rows = append(rows, CostRow{
 			ID: c.ID, Name: c.Name, Category: c.Category, Amount: brl(c.Amount),
 			Recurrence: l.T("recurrence." + string(c.Recurrence)), Starts: dayText(c.StartsOn), Ends: dayText(c.EndsOn),
-			Scope: scope, EndURL: prefix + adminSegment + "/costs/" + c.ID + "/end",
+			Scope: scope, EndURL: u.EndCost(c.ID),
 			Ended: !c.EndsOn.IsZero() && c.EndsOn.Before(today),
 		})
 	}
@@ -277,14 +286,14 @@ func costRows(prefix string, l Labels, views []CostView, today Day) []CostRow {
 }
 
 // entryRows are a page of the admin's books.
-func entryRows(prefix string, l Labels, entries []*Entry) []EntryRow {
+func entryRows(u URLs, l Labels, entries []*Entry) []EntryRow {
 	rows := make([]EntryRow, 0, len(entries))
 	for _, e := range entries {
 		source := l.T("source." + string(e.Source))
 		rows = append(rows, EntryRow{
 			ID: e.ID, Day: dayText(e.OccurredOn), Product: e.ProductID, Kind: l.Kind(e.Kind), Description: e.Description,
 			Gross: brl(e.Gross), Fee: brl(e.Fee), Net: brl(e.Net), Source: source, Ref: e.ExternalRef,
-			ReverseURL: prefix + adminSegment + "/entries/" + e.ID + "/reversal",
+			ReverseURL: u.Reverse(e.ID),
 			Reversible: e.Kind != KindReversal,
 			GrossSort:  sortCents(e.Gross), DaySort: string(e.OccurredOn),
 		})
@@ -293,7 +302,7 @@ func entryRows(prefix string, l Labels, entries []*Entry) []EntryRow {
 }
 
 // withdrawalRows are the operator's queue.
-func withdrawalRows(prefix string, l Labels, list []InvestorWithdrawal, loc *time.Location) []WithdrawalRow {
+func withdrawalRows(u URLs, l Labels, list []InvestorWithdrawal, loc *time.Location) []WithdrawalRow {
 	rows := make([]WithdrawalRow, 0, len(list))
 	for _, w := range list {
 		r := w.Request
@@ -305,17 +314,16 @@ func withdrawalRows(prefix string, l Labels, list []InvestorWithdrawal, loc *tim
 		if holder := r.AccountSnapshot["holder_name"]; holder != "" {
 			account += " · " + holder
 		}
-		base := prefix + adminSegment + "/withdrawals/" + r.ID
 		row := WithdrawalRow{
 			ID: r.ID, Investor: name, Amount: brl(int64(r.Amount)), Account: account,
 			Status: l.T("withdrawal." + string(r.Status)), StatusKey: string(r.Status),
 			RequestedAt: r.RequestedAt.In(loc).Format("02/01/2006 15:04"), Reason: r.RejectedReason,
 			Open: r.Status == wallet.WithdrawalRequested, Processing: r.Status == wallet.WithdrawalProcessing,
 			Paid:       r.Status == wallet.WithdrawalPaid,
-			ProcessURL: base + "/processing", PayURL: base + "/payment", RejectURL: base + "/rejection",
+			ProcessURL: u.Process(r.ID), PayURL: u.Pay(r.ID), RejectURL: u.Reject(r.ID),
 		}
 		if row.Paid && r.ReceiptKey != "" && w.Invoice != nil {
-			row.ReceiptURL = prefix + "/invoices/" + w.Invoice.ID + "/receipt"
+			row.ReceiptURL = u.Receipt(w.Invoice.ID)
 		}
 		rows = append(rows, row)
 	}
@@ -328,10 +336,10 @@ func (s Screen) AdminNav(current string) template.HTML {
 	var b strings.Builder
 	b.WriteString(`<nav class="flex flex-wrap items-center gap-1 border-b pb-3" aria-label="` + template.HTMLEscapeString(s.Labels.T("noun.investors")) + `">`)
 	for _, item := range []struct{ key, path string }{
-		{"investors", "/investors"}, {"entries", "/entries"}, {"costs", "/costs"}, {"withdrawals", "/withdrawals"},
+		{"investors", s.URLs.Investors()}, {"entries", s.URLs.Entries()}, {"costs", s.URLs.AdminCosts()}, {"withdrawals", s.URLs.Withdrawals()},
 	} {
 		b.WriteString(string(components.Link(components.LinkProps{
-			Label: s.Labels.T("noun." + item.key), URL: s.Prefix + adminSegment + item.path,
+			Label: s.Labels.T("noun." + item.key), URL: item.path,
 			Variant: "hover", Current: item.key == current,
 			ComponentProps: components.ComponentProps{Class: "rounded-md px-3 py-1.5 text-sm"},
 		})))
@@ -379,6 +387,37 @@ func (s Screen) CellForm(action, label, variant string, inputs ...CellInput) tem
 		variant = "outline"
 	}
 	b.WriteString(`<button class="btn" data-variant="` + esc(variant) + `" data-size="sm" type="submit">` + esc(label) + `</button></form>`)
+	return template.HTML(b.String())
+}
+
+// WithdrawForm is the form, drawn inside a table cell, that asks for one
+// invoice to be paid into one of the accounts given.
+func (s Screen) WithdrawForm(action string, accounts []AccountOption) template.HTML {
+	esc := template.HTMLEscapeString
+	var b strings.Builder
+	b.WriteString(`<form class="flex flex-wrap items-center gap-2" method="post" action="` + esc(action) + `">`)
+	b.WriteString(`<input type="hidden" name="_token" value="` + esc(s.CSRFToken()) + `">`)
+	b.WriteString(`<select class="select h-8 min-w-48 text-xs" name="account_id" required aria-label="` + esc(s.Labels.T("field.account")) + `">`)
+	b.WriteString(`<option value="">` + esc(s.Labels.T("control.choose_account")) + `</option>`)
+	for _, a := range accounts {
+		b.WriteString(`<option value="` + esc(a.ID) + `">` + esc(a.Label) + `</option>`)
+	}
+	b.WriteString(`</select>`)
+	b.WriteString(`<button class="btn" data-size="sm" type="submit">` + esc(s.Labels.T("control.request_withdrawal")) + `</button></form>`)
+	return template.HTML(b.String())
+}
+
+// PayForm is the operator's form, drawn inside a table cell, that marks a
+// withdrawal paid: the end-to-end identifier of the PIX or transfer, and the
+// receipt, a PDF, JPEG or PNG.
+func (s Screen) PayForm(action string) template.HTML {
+	esc := template.HTMLEscapeString
+	var b strings.Builder
+	b.WriteString(`<form class="grid gap-2" method="post" action="` + esc(action) + `" enctype="multipart/form-data">`)
+	b.WriteString(`<input type="hidden" name="_token" value="` + esc(s.CSRFToken()) + `">`)
+	b.WriteString(`<input class="input h-8 text-xs" type="text" name="end_to_end_id" required placeholder="` + esc(s.Labels.T("field.end_to_end_id")) + `" aria-label="` + esc(s.Labels.T("field.end_to_end_id")) + `">`)
+	b.WriteString(`<input class="input h-8 text-xs" type="file" name="receipt" accept="application/pdf,image/jpeg,image/png" required aria-label="` + esc(s.Labels.T("field.receipt")) + `">`)
+	b.WriteString(`<button class="btn" data-size="sm" type="submit">` + esc(s.Labels.T("control.pay")) + `</button></form>`)
 	return template.HTML(b.String())
 }
 

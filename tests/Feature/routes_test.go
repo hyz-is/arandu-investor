@@ -57,6 +57,7 @@ func mount(t *testing.T, cfg investor.Config) mounted {
 	t.Helper()
 
 	sessions := security.NewSessionStore([]byte(appKey), time.Hour, false, security.NewMemoryBackend())
+	sessions.ResolveSubjects(resolveSubjects)
 	flash := security.NewFlash([]byte(appKey), false)
 
 	if cfg.Files == nil {
@@ -88,6 +89,7 @@ func administrator() security.Subject {
 func (m mounted) signIn(t *testing.T, subject security.Subject) []*http.Cookie {
 	t.Helper()
 
+	signedIn.Store(subject.Tenant+"/"+subject.ID, subject)
 	rec := httptest.NewRecorder()
 	if _, err := m.sessions.Start(context.Background(), rec, subject); err != nil {
 		t.Fatalf("starting a session: %v", err)

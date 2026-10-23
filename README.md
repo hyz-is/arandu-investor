@@ -99,10 +99,14 @@ The package owns eight tables, which is why `arandu.mod.toml` says
 The policy is in `policy.go`, and roles reach it through the Subject, which
 [arandu-permission](https://github.com/hyz-is/arandu-permission) fills:
 
-| role | what it opens |
+| role or action | what it opens |
 | --- | --- |
-| `investor.admin` | the registry, contracts, entries, costs, closings, every investor's invoices and reports |
-| `wallet.operator` | arandu-wallet's operator actions; the admin who pays withdrawals needs it too |
+| role `investor.admin`, or action `investor.admin` (`AdminAction`) | the registry, contracts, entries, costs, closings, every investor's invoices and reports |
+| role `wallet.operator` | arandu-wallet's operator actions; the admin who pays withdrawals and closes periods needs it too |
+
+The action is what an arandu-permission group carries: mount its `Roles()` in
+`Config.Middleware` (or `AdminMiddleware`), so the actions are resolved on each
+request, and the people of that group are the admin.
 
 An investor needs no role. A signed-in user whose `user_id` is on an investor's
 registration reads that investor's panel, contracts, statements, projection,
@@ -145,14 +149,16 @@ A contract that fails to close does not stop the others: it is reported in
 
 ## Withdrawals
 
-The investor declares a PIX key on their panel — always in the name and
-document of their registration — and asks for an invoice. arandu-wallet holds
+The investor declares a PIX key or a bank account on their panel — always in
+the name and document of their registration — and asks for an invoice
+("Solicitar saque"). arandu-wallet holds
 the amount. The wallet is opened with `PayoutVia: "investor"`, so a request
 that does not come through this package — the wallet's own route — is refused,
 and no part of an invoice leaves around these rules. The admin, on the withdrawals screen, takes the request, makes the
 PIX outside the system, and records the end-to-end identifier with the receipt
 attached; or rejects it with a reason, and the invoice can be asked for again.
-The investor downloads the receipt from their panel.
+The investor downloads the receipt from their panel ("Ver comprovante"). With
+`Config.Activity`, every one of these acts is in arandu-activitylog.
 
 ## Reports
 
@@ -209,13 +215,33 @@ put the key in the application's own catalogue and pass it as
 | `Location` | no | the timezone days are counted in. Defaults to `America/Sao_Paulo`. |
 | `Payer` | no | the paying company, printed on the income report. |
 | `Translator` | no | the application's catalogue, asked before the shipped one. |
+| `Paths` | no | the segments of every route. Empty fields keep `DefaultPaths`; `PortuguesePaths` is the set in pt-BR (`/contratos`, `/faturas/{id}/saque`, `/faturas/{id}/comprovante`, `/conta-de-recebimento`, `/investidores`, `/saques`). |
+| `AdminPrefix` | no | where the admin's routes are mounted. Defaults to `Prefix` + `Paths.Admin`. |
+| `Middleware`, `AdminMiddleware` | no | run after `RequireAuth`, on every route and on the admin's only. |
+| `Chrome` | no | what the application's layout draws around a screen (its sidebar, its menu), carried on the page as `Screen.Chrome()`. |
+| `Activity` | no | arandu-activitylog's logger; every act that changes something is recorded in the log `investor`. |
+
+An application that keeps the investor's screens in its customer panel and the
+admin's in its operator console mounts the two halves itself:
+
+```go
+investorModule.InvestorRoutes(panel)   // under Prefix, with the panel's guards
+investorModule.AdminRoutes(console)    // under AdminPrefix, with the console's
+```
+
+The pages embed hesape's `view.Page` and answer `HasErrors` and
+`ErrorSummary` too, so they fit the layout of an application on Arandu
+Framework v0.62 and of an older one. `Module.URLs()` builds every address, for
+an application that links to the screens from its own pages.
 
 `New` returns an error rather than starting half-wired.
 
 ## Routes
 
 Every route sits behind `RequireAuth`: a visitor with no session is sent to
-`/auth/login`, and a handler reads who is asking with `ctx.User()`. The policy
+`/auth/login`, and a handler reads who is asking with `ctx.User()`. The paths below are the
+defaults; `Config.Paths` and `Config.AdminPrefix` move them, and the route names
+never change. The policy
 then decides; a refusal is 403, a record that is not there 404, a rejected
 input goes back with the messages in the flash (422 with the messages keyed by
 field to a JSON client).
@@ -224,7 +250,7 @@ field to a JSON client).
 | --- | --- | --- |
 | `GET` | `/investor/me` | the investor's panel |
 | `GET` | `/investor/me/contracts`, `/me/invoices` | the investor's contracts and invoices |
-| `POST` | `/investor/me/payout-accounts` | declare a PIX key |
+| `POST` | `/investor/me/payout-accounts` | declare a PIX key, or a bank account with `kind=bank` |
 | `GET` | `/investor/me/reports/{year}[/{month}]` | income report, monthly report |
 | `GET` | `/investor/contracts/{id}/statement`, `/projection`, `/file` | a contract's statement, open period, signed copy |
 | `GET` | `/investor/costs` | the declared costs |
