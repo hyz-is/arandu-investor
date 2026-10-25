@@ -10,6 +10,7 @@ import (
 
 	"github.com/arandu-io/framework/data"
 	"github.com/arandu-io/framework/security"
+	"github.com/arandu-io/hesape/auth"
 	"github.com/arandu-io/hesape/database/model"
 	"github.com/arandu-io/hesape/database/query"
 	"github.com/arandu-io/hesape/filesystem"
@@ -97,6 +98,34 @@ func TestTheInvestorReadsTheirOwnRowAndNothingElse(t *testing.T) {
 	for _, action := range manageActions {
 		if _, err := security.Authorize(context.Background(), investor.InvestorPolicy{}, signedIn(), action, mine); !errors.Is(err, security.ErrForbidden) {
 			t.Errorf("the investor was allowed %s on their own row: %v", action, err)
+		}
+	}
+}
+
+// A Grant issued to read a statement or a contract only reads: the database
+// refuses any write made with it. ReportsView writes, because asking for one's
+// own money -- a payout account, a withdrawal -- is decided under it, and so
+// does every management action.
+func TestAGrantToReadAStatementOrAContractOnlyReads(t *testing.T) {
+	t.Parallel()
+
+	mine := row("inv-1", "acme", "user-1")
+	for _, action := range []security.Action{investor.DashboardView, investor.ContractView} {
+		g, err := security.Authorize(context.Background(), investor.InvestorPolicy{}, signedIn(), action, mine)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := auth.Writable(g); !errors.Is(err, auth.ErrReadGrant) {
+			t.Errorf("the Grant for %s writes: %v", action, err)
+		}
+	}
+	for _, action := range append([]security.Action{investor.ReportsView}, manageActions...) {
+		g, err := security.Authorize(context.Background(), investor.InvestorPolicy{}, finance(), action, mine)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := auth.Writable(g); err != nil {
+			t.Errorf("the Grant for %s does not write: %v", action, err)
 		}
 	}
 }

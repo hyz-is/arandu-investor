@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/arandu-io/framework/security"
+	"github.com/arandu-io/hesape/auth"
 )
 
 // The actions of this package. Constants rather than strings at the call site:
@@ -68,6 +69,10 @@ type InvestorPolicy struct{}
 // the Model path still compiled.
 var _ security.Policy[Investor] = InvestorPolicy{}
 
+// Compile-time proof that the policy says which of its actions write: without
+// it the Grant issued to read a statement would also be one that writes.
+var _ auth.Writes = InvestorPolicy{}
+
 // Can decides whether the subject may perform the action on the record.
 //
 // It is the only place that decides. The service reaches the Model only after
@@ -123,4 +128,26 @@ func (InvestorPolicy) Can(ctx context.Context, s security.Subject, a security.Ac
 	// arandu:end custom
 
 	return fmt.Errorf("no rule allows %s on investor", a)
+}
+
+// Writes reports whether a Grant issued for the action may change anything.
+//
+// Reading the statement, the costs and the projection (DashboardView) and
+// reading or downloading a contract (ContractView) change nothing, so the
+// Grants issued for them only read: the database refuses an insert, update or
+// delete made with one, whatever the code holding it does next.
+//
+// ReportsView writes. It is also the action under which an investor asks for
+// their own money -- declaring a payout account and withdrawing an invoice --
+// and both record the request and an activity entry with that Grant.
+//
+// Everything not named as a read writes, the management actions with it, so
+// an action added later behaves as every action did before this method
+// existed until somebody decides it only reads.
+func (InvestorPolicy) Writes(a security.Action) bool {
+	switch a {
+	case DashboardView, ContractView:
+		return false
+	}
+	return true
 }

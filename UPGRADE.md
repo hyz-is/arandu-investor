@@ -14,6 +14,13 @@ application required before (Framework v0.62.1, Hesape v0.78.0,
 arandu-wallet v0.17.0 and arandu-activitylog v0.4.0 in v0.3.0). No symbol,
 route, table or view of this package changes.
 
+`InvestorPolicy` implements `auth.Writes`: a Grant `security.Authorize` issues
+for `DashboardView` or `ContractView` only reads, so the database refuses any
+insert, update or delete made with it (`auth.ErrReadGrant`). Nothing in this
+package writes with such a Grant; an application that reused one to write its
+own rows gets the refusal and authorizes that write for an action that writes.
+`ReportsView` and the management actions still issue Grants that write.
+
 ## v0.3.0
 
 `go get github.com/hyz-is/arandu-investor@v0.3.0`, then republish the views
