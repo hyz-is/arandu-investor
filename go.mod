@@ -9,7 +9,7 @@ require (
 	github.com/arandu-io/kyse v0.41.0
 	github.com/hyz-is/arandu-activitylog v0.6.0
 	github.com/hyz-is/arandu-br v0.4.1
-	github.com/hyz-is/arandu-wallet v0.19.0
+	github.com/hyz-is/arandu-wallet v0.20.0
 )
 
 require (

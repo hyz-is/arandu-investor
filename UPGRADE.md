@@ -8,7 +8,7 @@ fixed there (crypto/x509, net/http HTTP/2 and CONNECT, html/template,
 net/textproto, crypto/tls). A build on an older toolchain fetches 1.26.10 or
 fails when `GOTOOLCHAIN=local`.
 
-This release selects Framework v0.66.0, Hesape v0.85.0, arandu-wallet v0.19.0
+This release selects Framework v0.66.0, Hesape v0.85.0, arandu-wallet v0.20.0
 and arandu-activitylog v0.6.0; read their upgrade guides from the versions the
 application required before (Framework v0.62.1, Hesape v0.78.0,
 arandu-wallet v0.17.0 and arandu-activitylog v0.4.0 in v0.3.0). No symbol,
