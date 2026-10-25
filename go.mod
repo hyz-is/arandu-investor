@@ -1,21 +1,21 @@
 module github.com/hyz-is/arandu-investor
 
-go 1.26.0
+go 1.26.10
 
 require (
-	github.com/arandu-io/framework v0.62.1
-	github.com/arandu-io/hesape v0.78.0
+	github.com/arandu-io/framework v0.66.0
+	github.com/arandu-io/hesape v0.85.0
 	github.com/arandu-io/hesape/database/connectors/sqlite v0.11.0
 	github.com/arandu-io/kyse v0.41.0
+	github.com/hyz-is/arandu-activitylog v0.6.0
 	github.com/hyz-is/arandu-br v0.4.1
-	github.com/hyz-is/arandu-wallet v0.17.0
+	github.com/hyz-is/arandu-wallet v0.19.0
 )
 
 require (
 	github.com/arandu-io/hesape/filesystem/s3 v0.11.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/hyz-is/arandu-activitylog v0.4.0 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect

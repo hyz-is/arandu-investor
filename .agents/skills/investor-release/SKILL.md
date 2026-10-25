@@ -67,7 +67,7 @@ opened by nothing but that package's own suite.
 
 ```toml
 name = "hyz-is/investor"
-framework = ">= 0.62"
+framework = ">= 0.66"
 profiles = ["conventional", "performance"]
 
 [permissions]
