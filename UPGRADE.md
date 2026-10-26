@@ -1,6 +1,6 @@
 # Upgrade Guide
 
-## Unreleased
+## v0.5.0
 
 The published views are drawn with the Kyse `v0.45.0` data table, so this
 release requires Kyse `v0.45.0`, Framework `v0.67.0` and Hesape `v0.88.0` (the
