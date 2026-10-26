@@ -20,7 +20,7 @@ import (
 // line changes and never because somebody published something. Moving it is
 // how a stricter compiler is taken on: raise it, run the suite, and fix the
 // view it refuses here rather than in every application that publishes it.
-const viewCompiler = "github.com/arandu-io/aru@v0.74.0"
+const viewCompiler = "github.com/arandu-io/aru@v0.81.3"
 
 // TestEveryPublishedViewCompiles publishes the views into a project of their
 // own, builds them with the view compiler an application runs, and compiles
@@ -192,10 +192,18 @@ func main() {
 				Starts: "01/01/2026", Ends: "—", Scope: "Toda a aplicação", EndURL: "/investidor/admin/costs/k1/end"}}},
 			[]string{"Custos do sistema", "Servidor GPU", "/investidor/admin/costs/k1/end", "amount_brl"}},
 		{investor.ViewAdminEntries, investor.AdminEntriesPageData{Screen: sc, URL: "/investidor/admin/entries", StoreURL: "/investidor/admin/entries",
-			CloseDueURL: "/investidor/admin/closings/due", Today: "2026-10-12", CurrentPage: 1, Pages: 3, Total: 120, Kind: "sale",
+			CloseDueURL: "/investidor/admin/closings/due", Today: "2026-10-12", CurrentPage: 2, Pages: 5, Total: 120, Kind: "sale",
+			PageSize: 25, Hide: []string{"source"}, Query: "loc", Sort: "gross", Dir: "desc",
 			Rows: []investor.EntryRow{{ID: "e1", Day: "05/10/2026", Product: "loccrm", Kind: "Venda", Gross: "R$ 199,00", Fee: "R$ 7,98",
 				Net: "R$ 191,02", Source: "Aplicação", Ref: "o-1", ReverseURL: "/investidor/admin/entries/e1/reversal", Reversible: true}}},
-			[]string{"Lançamentos", "R$ 191,02", "/investidor/admin/entries/e1/reversal", "Fechar os contratos que vencem hoje", "gross_brl"}},
+			[]string{"Lançamentos", "R$ 191,02", "/investidor/admin/entries/e1/reversal", "Fechar os contratos que vencem hoje", "gross_brl",
+				// The table is drawn from the state the handler read: the page
+				// of a count it did not make up, and an address for every step
+				// that carries the search, the order, the kind and the hidden
+				// column. Stable attributes and sentences, never Basecoat classes.
+				"120 linha(s).", "Página 2 de 5", "data-total=\"120\"",
+				"dir=desc&amp;hide=source&amp;kind=sale&amp;page=2&amp;q=loc&amp;sort=gross",
+				"name=\"q\"", "value=\"loc\"", "name=\"hide\" value=\"source\"", "data-sort-key=\"gross\"", "Crescente"}},
 		{investor.ViewAdminWithdrawal, investor.AdminWithdrawalsPageData{Screen: sc, URL: "/investidor/admin/withdrawals",
 			Rows: []investor.WithdrawalRow{
 				{ID: "w1", Investor: "Ana Souza", Amount: "R$ 129,00", Account: "PIX ana@example.com", Status: "Pedido", StatusKey: "requested",

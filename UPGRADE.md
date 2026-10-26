@@ -1,5 +1,51 @@
 # Upgrade Guide
 
+## Unreleased
+
+The published views are drawn with the Kyse `v0.45.0` data table, so this
+release requires Kyse `v0.45.0`, Framework `v0.67.0` and Hesape `v0.88.0` (the
+view layer's script that makes the table's menus, selection and swap work is
+Hesape's from `v0.87.0`). Read Kyse's `UPGRADE.md` for `v0.45.0` first: only the
+lists drawn with `DataTable` change. No route, address, table or exported
+function of this package is removed.
+
+`go get github.com/hyz-is/arandu-investor@<tag>`, then:
+
+- An application that **never edited** the published views republishes them
+  with `aru vendor:publish --tag=view --apply` and runs `aru view:build`.
+- An application that **edited** them must port its copy; republishing would
+  overwrite it. The props the new table no longer has, and what replaces them
+  (the same table as Kyse's guide lists):
+  - `SearchName: "q"` becomes `Searchable: true`; the text is the state's `Q`.
+  - `Query`, `SortKey`, `SortDir`, `Page`, `Pages` and `Total` become
+    `State: components.DataTableValues{Q: ..., Sort: ..., Dir: ..., CurrentPage: ..., Size: ..., DefaultSize: ...}`
+    and `Paginator: pagination.NewLengthAwarePage(rows, total, size, page, pagination.Options{Path: url})`
+    (the admin's books: `AdminEntriesPageData` now carries `PageSize` and
+    `Hide` for it).
+  - `DataTableFilter.Selected` becomes `State.Facets`
+    (`map[string][]string{"kind": {data.Kind}}`); on a list that holds all its
+    rows, give each `TableRow` its `Facets` and the table its filters with
+    `investor.CompleteFilters(rows, ...)`.
+  - `Align: "right"` becomes `Align: "end"`.
+  - Add `FullPager: true` and `HeaderMenu: true` for the shadcn look, `URL` on
+    a `Complete` list (the page's `.Path`), and `Hideable: true` on the columns
+    the reader may switch off. A column's `Hidden: true` only applies to a list
+    with no `State`; the books no longer start with Source and External
+    reference hidden.
+  - The admin's registry draws its next-page step with
+    `Paginator: investor.NextOnly(data.NextURL)`; delete the button the view
+    drew under the table.
+- The catalogue: an application that overrides `lang/<locale>/investor.json`
+  drops `table.showing`, `table.per_page` and `table.page` and adds the new
+  `table.*` lines (see the changelog); a missing line is answered in English by
+  Kyse, and a test of this package fails a locale that lacks one.
+- A stylesheet needs nothing of the data table beyond what `aru view:build`
+  compiles; the `data-table.css` rules and the `.table-columns`, `.table-count`
+  and `.table-sort` rules Basecoat shipped for the old markup can go.
+- Tests that read the table's HTML by Basecoat classes break; read it by role,
+  label or `data-part`/`data-*` attributes (`data-total`, `data-sort-key`,
+  `aria-sort`), which the table keeps.
+
 ## v0.4.0
 
 Go 1.26.10 is the floor: `go.mod` declares `go 1.26.10`, because every

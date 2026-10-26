@@ -57,8 +57,9 @@ func contractsTable(data InvestorData) components.DataTableProps {
 		}})
 	}
 	return components.DataTableProps{
-		ID: "investor-admin-contracts", Label: data.Labels.T("screen.contracts_title"),
-		ColumnsLabel: data.Labels.T("control.columns"), Lines: data.TableLines(), Complete: true,
+		ID: "investor-admin-contracts", Label: data.Labels.T("screen.contracts_title"), URL: data.Path,
+		ColumnsLabel: data.Labels.T("control.columns"), Lines: data.TableLines(), Complete: true, PageSize: 12,
+		FullPager: true, HeaderMenu: true,
 		Columns: []components.TableColumn{
 			{Label: data.Labels.T("field.number"), Key: "number", Sortable: true},
 			{Label: data.Labels.T("field.version"), Key: "version"},
@@ -67,7 +68,7 @@ func contractsTable(data InvestorData) components.DataTableProps {
 			{Label: data.Labels.T("field.billing_day"), Key: "billing_day", Hideable: true},
 			{Label: data.Labels.T("field.period"), Key: "period", Hideable: true},
 			{Label: data.Labels.T("field.status"), Key: "status"},
-			{Label: "", Key: "links"},
+			{Label: data.Labels.T("field.actions"), Key: "links"},
 			{Label: data.Labels.T("screen.close_period"), Key: "close"},
 		},
 		Rows:  rows,
@@ -97,17 +98,18 @@ func invoicesTable(data InvestorData) components.DataTableProps {
 		}})
 	}
 	return components.DataTableProps{
-		ID: "investor-admin-invoices", Label: data.Labels.T("screen.invoices_title"),
+		ID: "investor-admin-invoices", Label: data.Labels.T("screen.invoices_title"), URL: data.Path,
 		ColumnsLabel: data.Labels.T("control.columns"), Lines: data.TableLines(), Complete: true, PageSize: 12,
+		PageSizes: []int{12, 24, 48}, FullPager: true, HeaderMenu: true,
 		Columns: []components.TableColumn{
 			{Label: data.Labels.T("field.period"), Key: "period"},
-			{Label: data.Labels.T("field.gross"), Key: "gross", Hideable: true, Align: "right"},
-			{Label: data.Labels.T("field.fees"), Key: "fees", Hideable: true, Align: "right"},
-			{Label: data.Labels.T("field.costs"), Key: "costs", Hideable: true, Align: "right"},
-			{Label: data.Labels.T("field.net"), Key: "net", Align: "right"},
-			{Label: data.Labels.T("field.amount"), Key: "amount", Align: "right"},
-			{Label: data.Labels.T("field.status"), Key: "status"},
-			{Label: data.Labels.T("field.withdrawal"), Key: "withdrawal"},
+			{Label: data.Labels.T("field.gross"), Key: "gross", Hideable: true, Align: "end"},
+			{Label: data.Labels.T("field.fees"), Key: "fees", Hideable: true, Align: "end"},
+			{Label: data.Labels.T("field.costs"), Key: "costs", Hideable: true, Align: "end"},
+			{Label: data.Labels.T("field.net"), Key: "net", Align: "end"},
+			{Label: data.Labels.T("field.amount"), Key: "amount", Align: "end"},
+			{Label: data.Labels.T("field.status"), Key: "status", Hideable: true},
+			{Label: data.Labels.T("field.withdrawal"), Key: "withdrawal", Hideable: true},
 		},
 		Rows:  rows,
 		Empty: components.EmptyProps{Title: data.Labels.T("screen.invoices_empty")},

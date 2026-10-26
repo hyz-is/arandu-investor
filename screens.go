@@ -86,10 +86,15 @@ func parseReais(s string) (int64, bool) {
 // tableLines are the sentences of every data table, from the catalogue.
 func (l Labels) tableLines() components.DataTableLines {
 	return components.DataTableLines{
-		Showing: l.T("table.showing"), PerPage: l.T("table.per_page"), NoResult: l.T("table.no_result"),
-		Previous: l.T("table.previous"), Next: l.T("table.next"), Page: l.T("table.page"), PageOf: l.T("table.page_of"),
-		Back: l.T("table.back"), Forward: l.T("table.forward"), SelectAll: l.T("table.select_all"), Bulk: l.T("table.bulk"),
-		Apply: l.T("table.apply"), Ascending: l.T("table.ascending"), Descending: l.T("table.descending"), Unsorted: l.T("table.unsorted"),
+		Filter: l.T("table.filter"), NoResult: l.T("table.no_result"), Rows: l.T("table.rows"),
+		SelectedCount: l.T("table.selected_count"), RowsPerPage: l.T("table.rows_per_page"), PageOf: l.T("table.page_of"),
+		First: l.T("table.first"), Previous: l.T("table.previous"), Next: l.T("table.next"), Last: l.T("table.last"),
+		Back: l.T("table.back"), Forward: l.T("table.forward"), SelectAll: l.T("table.select_all"), SelectRow: l.T("table.select_row"),
+		Bulk: l.T("table.bulk"), Apply: l.T("table.apply"),
+		Ascending: l.T("table.ascending"), Descending: l.T("table.descending"), Unsorted: l.T("table.unsorted"),
+		Reset: l.T("table.reset"), ClearFilters: l.T("table.clear_filters"), NoFacetResults: l.T("table.no_facet_results"),
+		FacetSelected: l.T("table.facet_selected"), OpenMenu: l.T("table.open_menu"), Actions: l.T("table.actions_header"),
+		ToggleColumns: l.T("table.toggle_columns"), Asc: l.T("table.asc"), Desc: l.T("table.desc"), Hide: l.T("table.hide"),
 	}
 }
 
@@ -172,6 +177,82 @@ func reportLinks(base string, contracts []ContractResource, now time.Time) (mont
 func (s Screen) SearchLabel(table string) string {
 	return s.Labels.line("control.search_label", map[string]any{"label": table})
 }
+
+// hideableEntryColumns are the keys of the books' columns the reader can
+// switch off, the ones the table marks Hideable.
+var hideableEntryColumns = map[string]bool{"description": true, "fee": true, "source": true, "ref": true}
+
+// hiddenEntryColumns are the column keys the address asked to hide, each once
+// and only when it is a column that can be hidden: the table draws them back
+// as fields of its form, so whatever else the address carried is dropped.
+func hiddenEntryColumns(asked []string) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, key := range asked {
+		if hideableEntryColumns[key] && !seen[key] {
+			seen[key] = true
+			out = append(out, key)
+		}
+	}
+	return out
+}
+
+// CompleteFilters are the faceted filters of a list that holds all its rows,
+// which the browser narrows by what each row says in TableRow.Facets. A filter
+// that names no Options offers the values the rows carry, in the order they
+// first appear; one that does name them keeps only those some row carries, so a
+// value nobody has is not offered. The count beside a value is how many rows
+// carry it. A filter that would offer fewer than two values narrows nothing and
+// is left out.
+func CompleteFilters(rows []components.TableRow, filters ...components.DataTableFilter) []components.DataTableFilter {
+	var out []components.DataTableFilter
+	for _, filter := range filters {
+		counts := map[string]int{}
+		var seen []string
+		for _, row := range rows {
+			value, ok := row.Facets[filter.Key]
+			if !ok {
+				continue
+			}
+			if counts[value] == 0 {
+				seen = append(seen, value)
+			}
+			counts[value]++
+		}
+		if len(seen) < 2 {
+			continue
+		}
+		var options []components.SelectOption
+		if len(filter.Options) == 0 {
+			for _, value := range seen {
+				options = append(options, components.SelectOption{Value: value, Label: value})
+			}
+		} else {
+			for _, option := range filter.Options {
+				if counts[option.Value] > 0 {
+					options = append(options, option)
+				}
+			}
+		}
+		filter.Options, filter.Counts = options, counts
+		out = append(out, filter)
+	}
+	return out
+}
+
+// NextOnly is the page of a list the package reads by cursor and tells nothing
+// else about: the address of the page after this one, not the number of the
+// page, not the total, not the way back. A data table given it as its
+// Paginator draws the one step.
+func NextOnly(next string) components.Paginator { return nextOnly{next: next} }
+
+type nextOnly struct{ next string }
+
+func (p nextOnly) HasPages() bool          { return p.next != "" }
+func (p nextOnly) OnFirstPage() bool       { return true }
+func (p nextOnly) HasMorePages() bool      { return p.next != "" }
+func (p nextOnly) PreviousPageURL() string { return "" }
+func (p nextOnly) NextPageURL() string     { return p.next }
 
 // invoiceRows are an investor's invoices, as the panel and the admin show them.
 func invoiceRows(u URLs, l Labels, views []InvoiceView) []InvoiceRow {

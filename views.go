@@ -411,6 +411,13 @@ type AdminEntriesPageData struct {
 	Query, Kind, Sort, Dir            string
 	CurrentPage, Pages, Total         int
 	URL, StoreURL, CloseDueURL, Today string
+	// PageSize is how many rows one page holds, the size the server reads
+	// the books with; the table's footer and its pager count by it.
+	PageSize int
+	// Hide are the keys of the columns the reader switched off, as the
+	// address carried them (hide=source&hide=ref), limited to the columns
+	// that can be hidden. The table draws its state from them.
+	Hide []string
 }
 
 // WithdrawalRow is one investor's withdrawal request in the operator's queue.

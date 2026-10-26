@@ -26,14 +26,15 @@ func projectionTable(data ProjectionData) components.DataTableProps {
 		}})
 	}
 	return components.DataTableProps{
-		ID: "investor-projection", Label: data.Labels.T("screen.projection_costs"),
+		ID: "investor-projection", Label: data.Labels.T("screen.projection_costs"), URL: data.Contract.ProjectionURL,
 		ColumnsLabel: data.Labels.T("control.columns"), Lines: data.TableLines(), Complete: true,
+		FullPager: true, HeaderMenu: true,
 		Columns: []components.TableColumn{
 			{Label: data.Labels.T("field.name"), Key: "name", Sortable: true},
 			{Label: data.Labels.T("field.category"), Key: "category", Sortable: true, Hideable: true},
 			{Label: data.Labels.T("field.recurrence"), Key: "recurrence", Hideable: true},
 			{Label: data.Labels.T("field.products"), Key: "scope", Hideable: true},
-			{Label: data.Labels.T("field.amount"), Key: "amount", Align: "right"},
+			{Label: data.Labels.T("field.amount"), Key: "amount", Align: "end"},
 		},
 		Rows:  rows,
 		Empty: components.EmptyProps{Title: data.Labels.T("screen.projection_empty")},

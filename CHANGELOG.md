@@ -10,6 +10,50 @@ a release is corrected by another release and never by moving a tag.
 
 ## [Unreleased]
 
+### Changed
+
+- The published views draw their lists with the Kyse `v0.45.0` data table
+  (shadcn/ui's): a toolbar with the search box and the faceted filters, the
+  Asc, Desc and Hide menu on a sortable header, the columns menu, a footer with
+  the row count, the page sizes and the full pager. Require Kyse `v0.45.0` and
+  Framework `v0.67.0` with Hesape `v0.88.0` (the view layer's script from
+  Hesape `v0.87.0` makes the menus, the selection and the swap work); the
+  manifest floor is `framework = ">= 0.67"`.
+- The lists that hold all their rows (the investor's contracts, invoices,
+  withdrawable invoices and payout accounts, the statement, the projected
+  costs, the admin's costs, withdrawals queue and an investor's contracts and
+  invoices) are `Complete`: the browser searches, orders, filters and pages
+  them, with `PageSize`, and `PageSizes` where a year at a time is useful. The
+  admin's costs, registry, withdrawals and the investor's invoices get faceted
+  filters (`TableRow.Facets`) drawn from the rows.
+- The admin's books are paged, searched, filtered and ordered by the server as
+  before, and the table is drawn from one state value
+  (`components.DataTableValues`) built from the address, so every control keeps
+  the others. The columns Source and External reference are no longer hidden at
+  first: with the new state the hidden columns travel in the address (`hide`),
+  and a list that starts with columns hidden could not show them again.
+- The admin's registry steps to the next page of a list longer than one page
+  through the table's own pager (`NextOnly`) instead of a button outside it.
+- Numeric columns are aligned with `Align: "end"`; `"right"` is not a value of
+  the new table. The empty header cells over the actions are named
+  (`field.actions`). The requested-at column of the withdrawals queues orders by
+  date (`SortValue`).
+- The catalogue's `table` group follows the new table: `showing`, `per_page`
+  and `page` are gone; `filter`, `rows`, `selected_count`, `rows_per_page`,
+  `first`, `last`, `select_row`, `reset`, `clear_filters`, `no_facet_results`,
+  `facet_selected`, `open_menu`, `actions_header`, `toggle_columns`, `asc`,
+  `desc` and `hide` are new, in `en` and `pt-BR`. `Screen.TableLines` answers
+  the new `components.DataTableLines`.
+
+### Added
+
+- `CompleteFilters`: the faceted filters of a list that holds all its rows,
+  built from `TableRow.Facets`, with the count beside each value.
+- `NextOnly`: the `components.Paginator` of a list read by cursor.
+- `AdminEntriesPageData.PageSize` and `Hide`: the page size the books were
+  read with and the hideable columns the address asked to hide
+  (`?hide=source`), which the table draws its state from.
+
 ## [0.4.0] - 2026-10-25
 
 ### Changed

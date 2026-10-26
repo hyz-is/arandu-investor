@@ -227,12 +227,9 @@
         "company": "Company"
     },
     "table": {
-        "showing": "{from} to {to} of {total}",
-        "per_page": "Per page",
         "no_result": "Nothing found.",
         "previous": "Previous",
         "next": "Next",
-        "page": "Page {n}",
         "page_of": "Page {n} of {total}",
         "back": "Back",
         "forward": "Forward",
@@ -241,7 +238,24 @@
         "apply": "Apply filters",
         "ascending": "{column}, sorted ascending",
         "descending": "{column}, sorted descending",
-        "unsorted": "{column}, not sorted"
+        "unsorted": "{column}, not sorted",
+        "filter": "Filter {label}...",
+        "rows": "{total} row(s).",
+        "selected_count": "{n} row(s) selected.",
+        "rows_per_page": "Rows per page",
+        "first": "Go to first page",
+        "last": "Go to last page",
+        "select_row": "Select row",
+        "reset": "Reset",
+        "clear_filters": "Clear filters",
+        "no_facet_results": "No results found.",
+        "facet_selected": "{n} selected",
+        "open_menu": "Open menu",
+        "actions_header": "Actions",
+        "toggle_columns": "Toggle columns",
+        "asc": "Asc",
+        "desc": "Desc",
+        "hide": "Hide"
     },
     "pix": {
         "cpf": "CPF",

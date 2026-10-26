@@ -12,14 +12,19 @@ import (
 // InvestorsData is what the handler hands this page.
 type InvestorsData = investor.AdminInvestorsPageData
 
+// investorsTable is the registry. The package answers a short list whole, and
+// the browser then searches, orders, filters and hides columns of it; a list
+// longer than one page it answers a page at a time by cursor, with no search,
+// order or total, and the table then only steps to the next page.
 func investorsTable(data InvestorsData) components.DataTableProps {
+	whole := data.Next == ""
 	rows := make([]components.TableRow, 0, len(data.Rows))
 	for _, r := range data.Rows {
 		variant := "outline"
 		if r.Active {
 			variant = ""
 		}
-		rows = append(rows, components.TableRow{Key: r.ID, Cells: []components.TableCell{
+		rows = append(rows, components.TableRow{Key: r.ID, Facets: map[string]string{"status": r.Status}, Cells: []components.TableCell{
 			{HTML: components.Link(components.LinkProps{Label: r.Name, URL: r.URL, Variant: "hover"}), SortValue: r.Name},
 			{Text: r.Document},
 			{Text: r.Kind},
@@ -28,23 +33,29 @@ func investorsTable(data InvestorsData) components.DataTableProps {
 			{HTML: components.Badge(components.BadgeProps{Label: r.Status, Variant: variant}), SortValue: r.Status},
 		}})
 	}
-	return components.DataTableProps{
-		ID: "investor-registry", Label: data.Labels.T("screen.admin_investors_title"),
+	p := components.DataTableProps{
+		ID: "investor-registry", Label: data.Labels.T("screen.admin_investors_title"), URL: data.StoreURL,
 		Caption: data.Labels.T("screen.admin_investors_lead"), ColumnsLabel: data.Labels.T("control.columns"),
-		Lines: data.TableLines(), Complete: data.Next == "", PageSize: 25,
-		SearchName: "q", SearchPlaceholder: data.Labels.T("control.search_placeholder"),
+		Lines: data.TableLines(), Complete: whole, PageSize: 25, FullPager: true, HeaderMenu: true,
+		Searchable: whole, SearchPlaceholder: data.Labels.T("control.search_placeholder"),
 		SearchLabel: data.SearchLabel(data.Labels.T("screen.admin_investors_title")),
 		Columns: []components.TableColumn{
-			{Label: data.Labels.T("field.name"), Key: "name", Sortable: true},
+			{Label: data.Labels.T("field.name"), Key: "name", Sortable: whole},
 			{Label: data.Labels.T("field.document"), Key: "document"},
-			{Label: data.Labels.T("field.person_kind"), Key: "kind", Sortable: true, Hideable: true},
-			{Label: data.Labels.T("field.email"), Key: "email", Hideable: true},
-			{Label: data.Labels.T("field.user"), Key: "user", Hideable: true, Hidden: true},
-			{Label: data.Labels.T("field.status"), Key: "status", Sortable: true},
+			{Label: data.Labels.T("field.person_kind"), Key: "kind", Sortable: whole, Hideable: whole},
+			{Label: data.Labels.T("field.email"), Key: "email", Hideable: whole},
+			{Label: data.Labels.T("field.user"), Key: "user", Hideable: whole, Hidden: true},
+			{Label: data.Labels.T("field.status"), Key: "status", Sortable: whole},
 		},
 		Rows:  rows,
 		Empty: components.EmptyProps{Title: data.Labels.T("screen.admin_investors_empty")},
 	}
+	if whole {
+		p.Filters = investor.CompleteFilters(rows, components.DataTableFilter{Key: "status", Label: data.Labels.T("field.status")})
+	} else {
+		p.Paginator = investor.NextOnly(data.NextURL)
+	}
+	return p
 }
 @endgo
 
@@ -62,11 +73,6 @@ func investorsTable(data InvestorsData) components.DataTableProps {
 	<div class="mt-6 grid gap-6 lg:grid-cols-3">
 		<div class="lg:col-span-2">
 			{!! components.DataTable(investorsTable(.)) !!}
-			@if(.NextURL != "")
-				<div class="mt-4 flex justify-end">
-					<a class="btn" data-variant="outline" data-size="sm" href="{{ .NextURL }}">{{ .Labels.T("table.forward") }}</a>
-				</div>
-			@endif
 		</div>
 
 		<form class="card grid content-start gap-3 p-5" method="post" action="{{ .StoreURL }}">

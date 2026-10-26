@@ -5,6 +5,7 @@ package admin
 import (
 	"html/template"
 
+	"github.com/arandu-io/hesape/pagination"
 	"github.com/arandu-io/kyse/components"
 
 	investor "github.com/hyz-is/arandu-investor"
@@ -14,8 +15,33 @@ import (
 // EntriesData is what the handler hands this page.
 type EntriesData = investor.AdminEntriesPageData
 
+// entriesState is what the package's handler read from the address and handed
+// on, as the table's state: the search, the order, the kind, the page, the page
+// size and the columns the reader hid. Every control the table draws is an
+// address this state builds, so a sort keeps the search and a page keeps both.
+func entriesState(data EntriesData) components.DataTableState {
+	state := components.DataTableValues{
+		Q: data.Query, Sort: data.Sort, Dir: data.Dir, CurrentPage: data.CurrentPage,
+		DefaultSize: entriesSize(data), Size: entriesSize(data), Hide: data.Hide,
+	}
+	if data.Kind != "" {
+		state.Facets = map[string][]string{"kind": {data.Kind}}
+	}
+	return state
+}
+
+// entriesSize is how many rows a page of the books holds, the package's own
+// default when the handler did not say.
+func entriesSize(data EntriesData) int {
+	if data.PageSize < 1 {
+		return investor.DefaultPageSize
+	}
+	return data.PageSize
+}
+
 // entriesTable is the books, paged, searched, filtered and ordered by the
-// server: the rows are a window onto a list that only grows.
+// server: the rows are a window onto a list that only grows. The package reads
+// its own page size, so the table offers no chooser.
 func entriesTable(data EntriesData) components.DataTableProps {
 	rows := make([]components.TableRow, 0, len(data.Rows))
 	for _, e := range data.Rows {
@@ -37,30 +63,27 @@ func entriesTable(data EntriesData) components.DataTableProps {
 			{HTML: reverse},
 		}})
 	}
-	var selected []string
-	if data.Kind != "" {
-		selected = []string{data.Kind}
-	}
 	return components.DataTableProps{
 		ID: "investor-books", Label: data.Labels.T("screen.admin_books_title"), URL: data.URL,
 		Caption: data.Labels.T("screen.admin_books_lead"), ColumnsLabel: data.Labels.T("control.columns"),
-		Lines: data.TableLines(),
-		Query: data.Query, SearchName: "q", SearchPlaceholder: data.Labels.T("screen.books_search"),
+		Lines: data.TableLines(), FullPager: true, HeaderMenu: true,
+		State: entriesState(data),
+		Paginator: pagination.NewLengthAwarePage(len(data.Rows), data.Total, entriesSize(data), data.CurrentPage,
+			pagination.Options{Path: data.URL}),
+		Searchable: true, SearchPlaceholder: data.Labels.T("screen.books_search"),
 		SearchLabel: data.SearchLabel(data.Labels.T("screen.admin_books_title")),
-		Filters: []components.DataTableFilter{{Key: "kind", Label: data.Labels.T("field.kind"), Options: data.KindOptions(), Selected: selected}},
-		SortKey: data.Sort, SortDir: data.Dir,
-		Page: data.CurrentPage, Pages: data.Pages, Total: data.Total,
+		Filters:     []components.DataTableFilter{{Key: "kind", Label: data.Labels.T("field.kind"), Options: data.KindOptions()}},
 		Columns: []components.TableColumn{
 			{Label: data.Labels.T("field.occurred_on"), Key: "occurred_on", Sortable: true},
 			{Label: data.Labels.T("field.kind"), Key: "kind", Sortable: true},
 			{Label: data.Labels.T("field.product"), Key: "product", Sortable: true},
 			{Label: data.Labels.T("field.description"), Key: "description", Hideable: true},
-			{Label: data.Labels.T("field.gross"), Key: "gross", Sortable: true, Align: "right"},
-			{Label: data.Labels.T("field.fee"), Key: "fee", Hideable: true, Align: "right"},
-			{Label: data.Labels.T("field.net"), Key: "net", Align: "right"},
-			{Label: data.Labels.T("field.source"), Key: "source", Hideable: true, Hidden: true},
-			{Label: data.Labels.T("field.external_ref"), Key: "ref", Hideable: true, Hidden: true},
-			{Label: "", Key: "reverse"},
+			{Label: data.Labels.T("field.gross"), Key: "gross", Sortable: true, Align: "end"},
+			{Label: data.Labels.T("field.fee"), Key: "fee", Hideable: true, Align: "end"},
+			{Label: data.Labels.T("field.net"), Key: "net", Align: "end"},
+			{Label: data.Labels.T("field.source"), Key: "source", Hideable: true},
+			{Label: data.Labels.T("field.external_ref"), Key: "ref", Hideable: true},
+			{Label: data.Labels.T("field.actions"), Key: "reverse"},
 		},
 		Rows:  rows,
 		Empty: components.EmptyProps{Title: data.Labels.T("screen.entries_empty")},

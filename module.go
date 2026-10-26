@@ -803,6 +803,7 @@ func (m *Module) entries(ctx *fhttp.Context) error {
 		Screen: sc, Rows: entryRows(m.URLs(), sc.Labels, rows),
 		Query: q.Search, Kind: string(q.Kind), Sort: q.Sort, Dir: q.Dir,
 		CurrentPage: page, Pages: pages, Total: total,
+		PageSize: m.cfg.PageSize, Hide: hiddenEntryColumns(ctx.Request.URL.Query()["hide"]),
 		URL: u.Entries(), StoreURL: u.Entries(), CloseDueURL: u.CloseDue(),
 		Today: string(m.today()),
 	})

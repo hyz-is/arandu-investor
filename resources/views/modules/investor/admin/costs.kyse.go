@@ -22,7 +22,7 @@ func costsTable(data CostsData) components.DataTableProps {
 			end = data.CellForm(c.EndURL, data.Labels.T("control.end_cost"), "outline",
 				investor.CellInput{Name: "ends_on", Type: "date", Value: data.Today, Label: data.Labels.T("field.ends_on"), Required: true})
 		}
-		rows = append(rows, components.TableRow{Key: c.ID, Cells: []components.TableCell{
+		rows = append(rows, components.TableRow{Key: c.ID, Facets: map[string]string{"recurrence": c.Recurrence}, Cells: []components.TableCell{
 			{Text: c.Name},
 			{Text: c.Category},
 			{Text: c.Amount},
@@ -34,20 +34,21 @@ func costsTable(data CostsData) components.DataTableProps {
 		}})
 	}
 	return components.DataTableProps{
-		ID: "investor-costs", Label: data.Labels.T("screen.admin_costs_title"),
+		ID: "investor-costs", Label: data.Labels.T("screen.admin_costs_title"), URL: data.StoreURL,
 		Caption: data.Labels.T("screen.admin_costs_lead"), ColumnsLabel: data.Labels.T("control.columns"),
-		Lines: data.TableLines(), Complete: true, PageSize: 25,
-		SearchName: "q", SearchPlaceholder: data.Labels.T("control.search_placeholder"),
+		Lines: data.TableLines(), Complete: true, PageSize: 25, FullPager: true, HeaderMenu: true,
+		Searchable: true, SearchPlaceholder: data.Labels.T("control.search_placeholder"),
 		SearchLabel: data.SearchLabel(data.Labels.T("screen.admin_costs_title")),
+		Filters:     investor.CompleteFilters(rows, components.DataTableFilter{Key: "recurrence", Label: data.Labels.T("field.recurrence")}),
 		Columns: []components.TableColumn{
 			{Label: data.Labels.T("field.name"), Key: "name", Sortable: true},
-			{Label: data.Labels.T("field.category"), Key: "category", Sortable: true},
-			{Label: data.Labels.T("field.amount"), Key: "amount", Align: "right"},
-			{Label: data.Labels.T("field.recurrence"), Key: "recurrence", Sortable: true},
+			{Label: data.Labels.T("field.category"), Key: "category", Sortable: true, Hideable: true},
+			{Label: data.Labels.T("field.amount"), Key: "amount", Align: "end"},
+			{Label: data.Labels.T("field.recurrence"), Key: "recurrence", Sortable: true, Hideable: true},
 			{Label: data.Labels.T("field.products"), Key: "scope", Hideable: true},
 			{Label: data.Labels.T("field.starts_on"), Key: "starts", Hideable: true},
 			{Label: data.Labels.T("field.ends_on"), Key: "ends", Hideable: true},
-			{Label: "", Key: "end"},
+			{Label: data.Labels.T("field.actions"), Key: "end"},
 		},
 		Rows:  rows,
 		Empty: components.EmptyProps{Title: data.Labels.T("screen.admin_costs_empty")},

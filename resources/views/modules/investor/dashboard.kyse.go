@@ -53,8 +53,9 @@ func dashboardContracts(data DashboardData) components.DataTableProps {
 		}})
 	}
 	return components.DataTableProps{
-		ID: "investor-contracts", Label: data.Labels.T("screen.contracts_title"),
-		ColumnsLabel: data.Labels.T("control.columns"), Lines: data.TableLines(), Complete: true,
+		ID: "investor-contracts", Label: data.Labels.T("screen.contracts_title"), URL: data.Path,
+		ColumnsLabel: data.Labels.T("control.columns"), Lines: data.TableLines(), Complete: true, PageSize: 12,
+		FullPager: true, HeaderMenu: true,
 		Columns: []components.TableColumn{
 			{Label: data.Labels.T("field.number"), Key: "number", Sortable: true},
 			{Label: data.Labels.T("field.share"), Key: "share"},
@@ -62,7 +63,7 @@ func dashboardContracts(data DashboardData) components.DataTableProps {
 			{Label: data.Labels.T("field.billing_day"), Key: "billing_day", Hideable: true},
 			{Label: data.Labels.T("field.period"), Key: "period", Hideable: true},
 			{Label: data.Labels.T("field.status"), Key: "status"},
-			{Label: "", Key: "links"},
+			{Label: data.Labels.T("field.actions"), Key: "links"},
 		},
 		Rows:  rows,
 		Empty: components.EmptyProps{Title: data.Labels.T("screen.contracts_empty")},
@@ -79,7 +80,11 @@ func dashboardInvoices(data DashboardData) components.DataTableProps {
 		if i.ReceiptURL != "" {
 			withdrawal += " " + components.Link(components.LinkProps{Label: data.Labels.T("control.view_receipt"), URL: i.ReceiptURL, Variant: "hover"})
 		}
-		rows = append(rows, components.TableRow{Key: i.ID, Cells: []components.TableCell{
+		facets := map[string]string{"status": i.Status}
+		if i.Withdrawal != "" {
+			facets["withdrawal"] = i.Withdrawal
+		}
+		rows = append(rows, components.TableRow{Key: i.ID, Facets: facets, Cells: []components.TableCell{
 			{Text: i.Period},
 			{Text: i.Gross},
 			{Text: i.Fees},
@@ -92,18 +97,22 @@ func dashboardInvoices(data DashboardData) components.DataTableProps {
 		}})
 	}
 	return components.DataTableProps{
-		ID: "investor-invoices", Label: data.Labels.T("screen.invoices_title"),
+		ID: "investor-invoices", Label: data.Labels.T("screen.invoices_title"), URL: data.Path,
 		ColumnsLabel: data.Labels.T("control.columns"), Lines: data.TableLines(), Complete: true, PageSize: 12,
+		PageSizes: []int{12, 24, 48}, FullPager: true, HeaderMenu: true,
+		Filters: investor.CompleteFilters(rows,
+			components.DataTableFilter{Key: "status", Label: data.Labels.T("field.status")},
+			components.DataTableFilter{Key: "withdrawal", Label: data.Labels.T("field.withdrawal")}),
 		Columns: []components.TableColumn{
 			{Label: data.Labels.T("field.period"), Key: "period"},
-			{Label: data.Labels.T("field.gross"), Key: "gross", Hideable: true, Align: "right"},
-			{Label: data.Labels.T("field.fees"), Key: "fees", Hideable: true, Align: "right"},
-			{Label: data.Labels.T("field.costs"), Key: "costs", Hideable: true, Align: "right"},
-			{Label: data.Labels.T("field.net"), Key: "net", Align: "right"},
+			{Label: data.Labels.T("field.gross"), Key: "gross", Hideable: true, Align: "end"},
+			{Label: data.Labels.T("field.fees"), Key: "fees", Hideable: true, Align: "end"},
+			{Label: data.Labels.T("field.costs"), Key: "costs", Hideable: true, Align: "end"},
+			{Label: data.Labels.T("field.net"), Key: "net", Align: "end"},
 			{Label: data.Labels.T("field.share"), Key: "share", Hideable: true},
-			{Label: data.Labels.T("field.amount"), Key: "amount", Align: "right"},
-			{Label: data.Labels.T("field.status"), Key: "status"},
-			{Label: data.Labels.T("field.withdrawal"), Key: "withdrawal"},
+			{Label: data.Labels.T("field.amount"), Key: "amount", Align: "end"},
+			{Label: data.Labels.T("field.status"), Key: "status", Hideable: true},
+			{Label: data.Labels.T("field.withdrawal"), Key: "withdrawal", Hideable: true},
 		},
 		Rows:  rows,
 		Empty: components.EmptyProps{Title: data.Labels.T("screen.invoices_empty")},
@@ -129,11 +138,12 @@ func withdrawableTable(data DashboardData) components.DataTableProps {
 		}})
 	}
 	return components.DataTableProps{
-		ID: "investor-withdrawable", Label: data.Labels.T("screen.withdraw_title"),
+		ID: "investor-withdrawable", Label: data.Labels.T("screen.withdraw_title"), URL: data.Path,
 		ColumnsLabel: data.Labels.T("control.columns"), Lines: data.TableLines(), Complete: true, PageSize: 12,
+		FullPager: true, HeaderMenu: true,
 		Columns: []components.TableColumn{
 			{Label: data.Labels.T("field.period"), Key: "period"},
-			{Label: data.Labels.T("field.amount"), Key: "amount", Align: "right"},
+			{Label: data.Labels.T("field.amount"), Key: "amount", Align: "end"},
 			{Label: data.Labels.T("field.account"), Key: "action"},
 		},
 		Rows:  rows,
@@ -151,8 +161,9 @@ func accountsTable(data DashboardData) components.DataTableProps {
 		}})
 	}
 	return components.DataTableProps{
-		ID: "investor-accounts", Label: data.Labels.T("screen.accounts_title"),
+		ID: "investor-accounts", Label: data.Labels.T("screen.accounts_title"), URL: data.Path,
 		ColumnsLabel: data.Labels.T("control.columns"), Lines: data.TableLines(), Complete: true, PageSize: 12,
+		FullPager: true, HeaderMenu: true,
 		Columns: []components.TableColumn{
 			{Label: data.Labels.T("field.account"), Key: "label"},
 			{Label: data.Labels.T("field.payout_kind"), Key: "kind"},

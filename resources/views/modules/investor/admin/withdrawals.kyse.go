@@ -26,6 +26,15 @@ func withdrawalVariant(key string) string {
 	return "secondary"
 }
 
+// requestedSort is the moment of a request, written "02/01/2006 15:04", as the
+// browser orders it: year first.
+func requestedSort(at string) string {
+	if len(at) != len("02/01/2006 15:04") {
+		return at
+	}
+	return at[6:10] + "-" + at[3:5] + "-" + at[0:2] + " " + at[11:]
+}
+
 // pendingTable is the operator's work: the requests waiting to be taken or
 // paid, each with what can be done to it. Taking one starts its payment; a
 // request being paid is marked paid with the end-to-end identifier and the
@@ -46,7 +55,7 @@ func pendingTable(data WithdrawalsData) components.DataTableProps {
 		action += data.CellForm(w.RejectURL, data.Labels.T("control.reject"), "destructive",
 			investor.CellInput{Name: "reason", Placeholder: data.Labels.T("field.reason"), Label: data.Labels.T("field.reason"), Required: true})
 		rows = append(rows, components.TableRow{Key: w.ID, Cells: []components.TableCell{
-			{Text: w.RequestedAt},
+			{Text: w.RequestedAt, SortValue: requestedSort(w.RequestedAt)},
 			{Text: w.Investor},
 			{Text: w.Amount},
 			{Text: w.Account},
@@ -55,14 +64,15 @@ func pendingTable(data WithdrawalsData) components.DataTableProps {
 		}})
 	}
 	return components.DataTableProps{
-		ID: "investor-withdrawals-pending", Label: data.Labels.T("screen.pending_title"),
+		ID: "investor-withdrawals-pending", Label: data.Labels.T("screen.pending_title"), URL: data.URL,
 		ColumnsLabel: data.Labels.T("control.columns"), Lines: data.TableLines(), Complete: true, PageSize: 25,
+		FullPager: true, HeaderMenu: true,
 		Columns: []components.TableColumn{
 			{Label: data.Labels.T("field.requested_at"), Key: "requested_at", Sortable: true},
 			{Label: data.Labels.T("noun.investor"), Key: "investor", Sortable: true},
-			{Label: data.Labels.T("field.amount"), Key: "amount", Align: "right"},
-			{Label: data.Labels.T("field.account"), Key: "account"},
-			{Label: data.Labels.T("field.status"), Key: "status"},
+			{Label: data.Labels.T("field.amount"), Key: "amount", Align: "end"},
+			{Label: data.Labels.T("field.account"), Key: "account", Hideable: true},
+			{Label: data.Labels.T("field.status"), Key: "status", Hideable: true},
 			{Label: data.Labels.T("field.actions"), Key: "actions"},
 		},
 		Rows:  rows,
@@ -77,8 +87,8 @@ func withdrawalsTable(data WithdrawalsData) components.DataTableProps {
 		if w.ReceiptURL != "" {
 			status += " " + components.Link(components.LinkProps{Label: data.Labels.T("control.view_receipt"), URL: w.ReceiptURL, Variant: "hover"})
 		}
-		rows = append(rows, components.TableRow{Key: w.ID, Cells: []components.TableCell{
-			{Text: w.RequestedAt},
+		rows = append(rows, components.TableRow{Key: w.ID, Facets: map[string]string{"status": w.StatusKey}, Cells: []components.TableCell{
+			{Text: w.RequestedAt, SortValue: requestedSort(w.RequestedAt)},
 			{Text: w.Investor},
 			{Text: w.Amount},
 			{Text: w.Account},
@@ -86,20 +96,24 @@ func withdrawalsTable(data WithdrawalsData) components.DataTableProps {
 			{Text: w.Reason},
 		}})
 	}
-	var selected []string
+	// The package narrows the queue by ?status= itself, and answers the whole
+	// queue without it, so the browser narrows what it was sent. The status the
+	// address named is the state the list starts in.
+	var state components.DataTableState
 	if data.Status != "" {
-		selected = []string{data.Status}
+		state = components.DataTableValues{Facets: map[string][]string{"status": {data.Status}}}
 	}
 	return components.DataTableProps{
 		ID: "investor-withdrawals", Label: data.Labels.T("screen.admin_withdrawals_title"), URL: data.URL,
 		ColumnsLabel: data.Labels.T("control.columns"), Lines: data.TableLines(), Complete: true, PageSize: 25,
-		SearchName: "q", SearchPlaceholder: data.Labels.T("control.search_placeholder"),
+		FullPager: true, HeaderMenu: true, State: state,
+		Searchable: true, SearchPlaceholder: data.Labels.T("control.search_placeholder"),
 		SearchLabel: data.SearchLabel(data.Labels.T("screen.admin_withdrawals_title")),
-		Filters: []components.DataTableFilter{{Key: "status", Label: data.Labels.T("field.status"), Options: data.WithdrawalStatusOptions(), Selected: selected}},
+		Filters:     []components.DataTableFilter{{Key: "status", Label: data.Labels.T("field.status"), Options: data.WithdrawalStatusOptions()}},
 		Columns: []components.TableColumn{
 			{Label: data.Labels.T("field.requested_at"), Key: "requested_at", Sortable: true},
 			{Label: data.Labels.T("noun.investor"), Key: "investor", Sortable: true},
-			{Label: data.Labels.T("field.amount"), Key: "amount", Align: "right"},
+			{Label: data.Labels.T("field.amount"), Key: "amount", Align: "end"},
 			{Label: data.Labels.T("field.account"), Key: "account", Hideable: true},
 			{Label: data.Labels.T("field.status"), Key: "status", Sortable: true},
 			{Label: data.Labels.T("field.reason"), Key: "reason", Hideable: true},
