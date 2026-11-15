@@ -56,7 +56,9 @@ go get github.com/hyz-is/arandu-investor
 
 An Arandu application registers a module explicitly. There is no service
 provider, no container and no discovery, so these are the lines to paste into
-`bootstrap/app.go` and there are no others.
+`bootstrap/app.go`, and the views add imports below.
+
+The imports, with the other module imports:
 
 ```go
 import (
@@ -65,24 +67,31 @@ import (
 )
 ```
 
-In `Build`, after the session store, the Disk and the wallet module exist and
-before `k.Register`:
+The construction, in `App`, once `NewAppServiceProvider` has returned and the
+Disk and the wallet module exist. `New` refuses a wiring that cannot work and
+`Configure` has no way to return that error, so the module is built where the
+error can leave; the database and the session store are the ones the framework
+built from the configuration:
 
 ```go
 	investorModule, err := investor.New(investor.Config{
 		Files:  contractsDisk,         // the application's filesystem.Disk, local or S3
 		Wallet: walletModule.Service(), // the one arandu-wallet instance
 		Payer:  investor.Payer{Name: "Empresa Ltda", Document: "00.000.000/0001-00"},
-	}, db, sessions)
+	}, drivers.DB, drivers.Sessions)
 	if err != nil {
-		return App{}, err
+		_ = drivers.Close()
+		return nil, err
 	}
 ```
 
-And the registration, inside the `k.Register(...)` call already there:
+And the registration, in the `WithProviders(...)` chain the builder is made of:
 
 ```go
-		investorModule,
+	return Configure(cfg, drivers, app).
+		WithProviders(investorModule).
+		WithVersion(version, commit).
+		Create()
 ```
 
 Then, once, before the application serves:
