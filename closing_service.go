@@ -148,19 +148,35 @@ func (s *InvestorService) closeContract(ctx context.Context, actor security.Subj
 	if current == nil {
 		return nil, validation.Errors{"contract": {message("no_version")}}
 	}
-	original, err := Contracts(s.db).WhereKey(rootID).First(ctx, g)
+	// The contract runs from the earliest start of its versions: an amendment
+	// that moves the start earlier (an aporte dated back) counts from that day,
+	// as the investor's screens already read it (reportLinks).
+	versions, err := Contracts(s.db).Where("root_id", "=", rootID).Get(ctx, g)
 	if err != nil {
 		return nil, err
 	}
-	if original == nil {
-		return nil, ErrNotFound
+	var since Day
+	for _, v := range versions {
+		if !v.StartsOn.IsZero() && (since.IsZero() || v.StartsOn.Before(since)) {
+			since = v.StartsOn
+		}
+	}
+	if since.IsZero() {
+		original, err := Contracts(s.db).WhereKey(rootID).First(ctx, g)
+		if err != nil {
+			return nil, err
+		}
+		if original == nil {
+			return nil, ErrNotFound
+		}
+		since = original.StartsOn
 	}
 
 	end := periodEndFor(asOf, current.BillingDay)
 	if !current.EndsOn.IsZero() && current.EndsOn.AddDays(1).Before(end) {
 		end = current.EndsOn.AddDays(1)
 	}
-	start := original.StartsOn
+	start := since
 	last, err := Invoices(s.db).Where("root_id", "=", rootID).OrderByDesc("period_end").First(ctx, g)
 	if err != nil {
 		return nil, err
@@ -191,7 +207,7 @@ func (s *InvestorService) closeContract(ctx context.Context, actor security.Subj
 		counted[l.EntryID] = true
 	}
 	candidates, err := Entries(s.db).Where("occurred_on", "<", string(end)).
-		Where("occurred_on", ">=", string(original.StartsOn)).OrderBy("occurred_at").OrderBy("id").Get(ctx, g)
+		Where("occurred_on", ">=", string(since)).OrderBy("occurred_at").OrderBy("id").Get(ctx, g)
 	if err != nil {
 		return nil, err
 	}

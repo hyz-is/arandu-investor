@@ -253,3 +253,36 @@ func TestASuspendedInvestorTakesPartInNoClosingAndDueContractsCloseTogether(t *t
 		t.Fatalf("closed %d (want Ana's, 10000), failed %v (want Bruno's)", len(closed), failed)
 	}
 }
+
+// A contract amended to start earlier (the aporte dated back) is closed from
+// that earlier day: the first closing is the whole period, not nothing.
+func TestAContractAmendedToStartEarlierClosesFromTheEarlierDay(t *testing.T) {
+	t.Parallel()
+	w := install(t)
+	ctx := context.Background()
+	leo := registerPerson(t, w, "user-leo", cpfAna)
+	terms := investor.ContractRequest{
+		Number: "C-leo", SignedOn: "2026-10-15", StartsOn: "2026-10-20",
+		ShareBps: 1500, BillingDay: 20, AllProducts: true,
+		FileName: "contrato.pdf", FileType: "application/pdf",
+	}
+	first, err := w.svc.CreateContract(ctx, admin(), leo.ID, terms, strings.NewReader("%PDF"))
+	if err != nil {
+		t.Fatalf("registering the contract: %v", err)
+	}
+	terms.StartsOn = "2026-09-20"
+	amended, err := w.svc.AmendContract(ctx, admin(), first.ID, terms, strings.NewReader("%PDF"))
+	if err != nil {
+		t.Fatalf("amending the contract: %v", err)
+	}
+	record(t, w, "sale-leo", investor.KindSale, "loccrm", "2026-10-05", 1000000, 0)
+
+	invoice, err := w.svc.Close(ctx, admin(), amended.ID, "2026-10-20")
+	if err != nil {
+		t.Fatalf("closing: %v", err)
+	}
+	if invoice.PeriodStart != "2026-09-20" || invoice.PeriodEnd != "2026-10-20" || invoice.Gross != 1000000 || invoice.Amount != 150000 {
+		t.Fatalf("period %s to %s, gross %d, amount %d; want 2026-09-20 to 2026-10-20, 1000000, 150000",
+			invoice.PeriodStart, invoice.PeriodEnd, invoice.Gross, invoice.Amount)
+	}
+}

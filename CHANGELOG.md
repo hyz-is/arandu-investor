@@ -8,6 +8,15 @@ the versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 A published module version is immutable: Go serves it from the proxy forever, so
 a release is corrected by another release and never by moving a tag.
 
+## [0.6.2] - 2026-11-19
+
+### Fixed
+
+- A contract amended to start earlier is closed from the earliest start of its
+  versions, as the investor's screens already read it. Before, the closing
+  counted from the first version's start, so an aporte dated back by an
+  amendment closed nothing in its first period.
+
 ## [0.5.0] - 2026-10-26
 
 ### Changed
