@@ -241,13 +241,15 @@ func (r CostRequest) Validate() validation.Errors {
 		e.Add("amount", message("amount_positive"))
 	}
 	switch r.Recurrence {
-	case Monthly, Yearly, Once:
+	case Monthly, Yearly, Once, MonthlyCharged:
 	default:
 		e.Add("recurrence", message("recurrence"))
 	}
 	starts, err := ParseDay(r.StartsOn)
 	if err != nil || starts.IsZero() {
 		e.Add("starts_on", message("day", dayLayout))
+	} else if r.Recurrence == MonthlyCharged && starts.Time().Day() > maxChargeDay {
+		e.Add("starts_on", message("charge_day"))
 	}
 	ends, err := ParseDay(r.EndsOn)
 	if err != nil {

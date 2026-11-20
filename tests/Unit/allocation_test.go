@@ -50,6 +50,42 @@ func TestACostIsCountedByBillingMonth(t *testing.T) {
 	}
 }
 
+// charged is the server of R$ 1.750,00 invoiced on the 23rd of every month.
+func charged(starts, ends string) investor.CostItem {
+	return investor.CostItem{Amount: 175000, Recurrence: investor.MonthlyCharged,
+		StartsOn: investor.Day(starts), EndsOn: investor.Day(ends)}
+}
+
+func TestAChargedCostFallsWholeInThePeriodOfItsDay(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name       string
+		item       investor.CostItem
+		start, end string
+		billing    int
+		want       int64
+	}{
+		{"the charge of the 23rd in a calendar month", charged("2026-11-23", ""), "2026-11-01", "2026-12-01", 1, 175000},
+		{"whole, though the period starts after the contract", charged("2026-11-23", ""), "2026-11-18", "2026-12-01", 1, 175000},
+		{"never prorated by the days the period has", charged("2026-11-23", ""), "2026-11-24", "2026-12-01", 1, 0},
+		{"the next month's charge", charged("2026-11-23", ""), "2026-12-01", "2027-01-01", 1, 175000},
+		{"a period that ends before the charge", charged("2026-11-23", ""), "2026-11-01", "2026-11-23", 1, 0},
+		{"a period that starts on the charge day takes it", charged("2026-11-23", ""), "2026-11-23", "2026-12-01", 1, 175000},
+		{"before the cost starts", charged("2026-11-23", ""), "2026-10-01", "2026-11-01", 1, 0},
+		{"two charges in one window", charged("2026-11-23", ""), "2026-11-01", "2027-01-01", 1, 350000},
+		{"a billing month from the 21st holds the charge of the 23rd", charged("2026-11-23", ""), "2026-11-21", "2026-12-21", 21, 175000},
+		{"a cost that ended", charged("2026-11-23", "2026-12-22"), "2026-12-01", "2027-01-01", 1, 0},
+		{"a cost ending on its charge day still takes it", charged("2026-11-23", "2026-12-23"), "2026-12-01", "2027-01-01", 1, 175000},
+		{"a day above the 28th is never charged", charged("2026-10-31", ""), "2026-11-01", "2026-12-01", 1, 0},
+	}
+	for _, c := range cases {
+		if got := investor.CostInWindow(c.item, investor.Day(c.start), investor.Day(c.end), c.billing); got != c.want {
+			t.Errorf("%s: %d centavos, want %d", c.name, got, c.want)
+		}
+	}
+}
+
 func scope(products ...string) investor.Scope {
 	if len(products) == 0 {
 		return investor.Scope{All: true}

@@ -2,6 +2,7 @@ package investor
 
 import (
 	"sort"
+	"time"
 )
 
 // The calculation of a closing, kept pure: no database, no clock, no Grant.
@@ -84,6 +85,8 @@ func CostInWindow(item CostItem, start, end Day, billingDay int) int64 {
 			return item.Amount
 		}
 		return 0
+	case MonthlyCharged:
+		return chargesInWindow(item, start, end, runEnd)
 	case Monthly, Yearly:
 	default:
 		return 0
@@ -117,6 +120,32 @@ func CostInWindow(item CostItem, start, end Day, billingDay int) int64 {
 		month = next
 	}
 	return total
+}
+
+// maxChargeDay is the last day of a month a monthly charge may fall on: the
+// 28th, which every month has.
+const maxChargeDay = 28
+
+// chargesInWindow is the sum of the charges of a MonthlyCharged cost whose day
+// falls in [start, end): one per month, on the day of StartsOn, from StartsOn
+// to the day before runEnd (empty: no end), each counted whole.
+func chargesInWindow(item CostItem, start, end, runEnd Day) int64 {
+	day := item.StartsOn.Time().Day()
+	if day > maxChargeDay {
+		return 0
+	}
+	first := start.Time()
+	var total int64
+	for month := time.Date(first.Year(), first.Month(), 1, 0, 0, 0, 0, time.UTC); ; month = month.AddDate(0, 1, 0) {
+		charge := Day(time.Date(month.Year(), month.Month(), day, 0, 0, 0, 0, time.UTC).Format(DayLayout))
+		if !charge.Before(end) {
+			return total
+		}
+		if charge.Before(start) || charge.Before(item.StartsOn) || (!runEnd.IsZero() && !charge.Before(runEnd)) {
+			continue
+		}
+		total += item.Amount
+	}
 }
 
 // Scope is a set of products, or the whole application.

@@ -1,5 +1,22 @@
 # Upgrade Guide
 
+## v0.7.0
+
+Adds the cost recurrence `MonthlyCharged` (`"monthly_charged"`). Nothing is
+removed and no table changes: `investor_cost_items.recurrence` is a string
+column that already holds the new value. An application that edited the
+published costs view and wants the new choice offered adds `monthly_charged` to
+its recurrence select (`Screen.RecurrenceOptions` already lists it), and its
+`resources/lang/<locale>/investor.json` gets `recurrence.monthly_charged` and
+`validation.charge_day`; a missing line is answered in English by the shipped
+catalogue.
+
+## v0.6.2
+
+A contract amended to start earlier is closed from the earliest start of its
+versions. Nothing to change in an application; a period that closed nothing
+because of the amendment is closed by the next closing.
+
 ## v0.5.0
 
 The published views are drawn with the Kyse `v0.45.0` data table, so this

@@ -8,6 +8,18 @@ the versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 A published module version is immutable: Go serves it from the proxy forever, so
 a release is corrected by another release and never by moving a tag.
 
+## [0.7.0] - 2026-11-19
+
+### Added
+
+- `MonthlyCharged`, a cost charged on one day of every month (the day of its
+  `StartsOn`, 1 to 28, from `StartsOn` to `EndsOn`). Each charge is counted
+  whole in the period its day falls in, whatever the billing day, and is never
+  prorated by the days the period has: a server invoiced on the 23rd is a cost of
+  the period of the 23rd. The costs screen offers it as "Mensal, no dia da
+  cobrança" / "Monthly, on the day it is charged"; `CostRequest` refuses a
+  `StartsOn` after the 28th for it.
+
 ## [0.6.2] - 2026-11-19
 
 ### Fixed

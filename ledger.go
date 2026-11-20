@@ -145,6 +145,13 @@ const (
 	Yearly Recurrence = "yearly"
 	// Once is the amount on StartsOn, and never again.
 	Once Recurrence = "once"
+	// MonthlyCharged is the amount charged on one day of every month: the day
+	// of StartsOn (the 23rd for a StartsOn of the 23rd), from StartsOn to
+	// EndsOn. Each charge is counted whole in the period its day falls in,
+	// whatever the billing day, never prorated: a server invoiced on the 23rd
+	// is a cost of the period of the 23rd. The day is 1 to 28, which every
+	// month has.
+	MonthlyCharged Recurrence = "monthly_charged"
 )
 
 var costItemTable = model.NewTable(model.TableSpec{

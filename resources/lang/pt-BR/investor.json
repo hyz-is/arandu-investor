@@ -220,6 +220,7 @@
     "recurrence": {
         "monthly": "Mensal",
         "yearly": "Anual",
+        "monthly_charged": "Mensal, no dia da cobrança",
         "once": "Avulso"
     },
     "person": {
@@ -312,6 +313,7 @@
         "share_range": "Informe uma participação entre 0,01% e 100%.",
         "billing_day": "Escolha um dia entre 1 e 28.",
         "contract_products": "Informe ao menos um produto ou marque toda a aplicação.",
+        "charge_day": "uma despesa cobrada num dia do mês precisa começar entre o dia 1 e o dia 28, que todo mês tem.",
         "cost_products": "Informe ao menos um produto ou rateie o custo sobre toda a aplicação.",
         "product_too_long": "O produto :product passa de :max caracteres.",
         "file_type": "Envie um arquivo PDF, JPEG ou PNG.",
@@ -334,7 +336,7 @@
         "entry_kind": "Escolha um tipo de lançamento da lista.",
         "reversal_of_reversal": "Este lançamento já é um estorno. Registre o lançamento original de novo.",
         "amount_positive": "Informe um valor positivo.",
-        "recurrence": "Escolha mensal, anual ou avulso.",
+        "recurrence": "Escolha mensal, mensal cobrada num dia, anual ou avulso.",
         "report_month": "Informe um ano e um mês de 1 a 12.",
         "report_year": "Informe um ano válido.",
         "account_required": "Escolha a conta que vai receber o pagamento.",

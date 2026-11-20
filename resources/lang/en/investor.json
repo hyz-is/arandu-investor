@@ -220,6 +220,7 @@
     "recurrence": {
         "monthly": "Monthly",
         "yearly": "Yearly",
+        "monthly_charged": "Monthly, on the day it is charged",
         "once": "One-off"
     },
     "person": {
@@ -312,6 +313,7 @@
         "share_range": "must be between 1 and 10000 basis points (0.01% to 100%)",
         "billing_day": "must be between 1 and 28",
         "contract_products": "name at least one product, or cover the whole application",
+        "charge_day": "a cost charged on a day of the month must start between the 1st and the 28th, which every month has",
         "cost_products": "name at least one product, or charge the whole application",
         "product_too_long": ":product is longer than :max characters",
         "file_type": "must be a PDF, a JPEG or a PNG",
@@ -334,7 +336,7 @@
         "entry_kind": "must be sale, renewal, refund, fee, expense, tax or adjustment",
         "reversal_of_reversal": "is itself a reversal; record the original again instead",
         "amount_positive": "must be positive, in centavos",
-        "recurrence": "must be monthly, yearly or once",
+        "recurrence": "must be monthly, charged monthly on a day, yearly or once",
         "report_month": "must be a year and a month, 1 to 12",
         "report_year": "must be a calendar year",
         "account_required": "choose the account to be paid into",

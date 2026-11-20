@@ -352,8 +352,8 @@ func (s Screen) ManualKindOptions() []components.SelectOption { return kindOptio
 
 // RecurrenceOptions are how often a cost is due.
 func (s Screen) RecurrenceOptions() []components.SelectOption {
-	out := make([]components.SelectOption, 0, 3)
-	for _, r := range []Recurrence{Monthly, Yearly, Once} {
+	out := make([]components.SelectOption, 0, 4)
+	for _, r := range []Recurrence{Monthly, MonthlyCharged, Yearly, Once} {
 		out = append(out, components.SelectOption{Value: string(r), Label: s.Labels.T("recurrence." + string(r))})
 	}
 	return out
