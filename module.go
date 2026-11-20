@@ -1205,7 +1205,23 @@ func (m *Module) Migrations() []foundation.Migration {
 		createInvestors{}, createContracts{}, createContractProducts{},
 		createEntries{}, createCostItems{}, createCostItemProducts{},
 		createInvoices{}, createInvoiceEntries{},
+		widenInvestorTimePrecision,
 	}
+}
+
+// widenInvestorTimePrecision raises every date-time column of the module's
+// tables to microseconds where an earlier framework default created them in
+// whole seconds, which PostgreSQL rounds a value to and MySQL truncates it to:
+// an entry read back by instant, a period closed at the day's edge and a
+// contract's start were not at the instant they were written. A table created
+// in microseconds already is left alone, SQLite has nothing to widen, and the
+// rollback keeps the columns wide.
+var widenInvestorTimePrecision = migrations.WidenTimePrecision{
+	Name: "20261120_0001_widen_investor_time_precision",
+	Tables: []string{
+		investorsTable, contractsTable, contractProductsTable, entriesTable,
+		costItemsTable, costItemProductsTable, invoicesTable, invoiceEntriesTable,
+	},
 }
 
 // The migration is reversible, and the assertion is here rather than discovered

@@ -1,5 +1,13 @@
 # Upgrade Guide
 
+## v0.7.1
+
+Run `aru migrate`: one migration widens the module's date-time columns to
+microseconds where they were created in whole seconds. No code change, no
+address, table or exported function changes. An application that lists the
+tables whose precision a test checks (`TestEveryOwnTableIsWidened` in Peráta)
+needs nothing for these: the module widens its own.
+
 ## v0.7.0
 
 Adds the cost recurrence `MonthlyCharged` (`"monthly_charged"`). Nothing is

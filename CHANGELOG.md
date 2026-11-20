@@ -8,6 +8,16 @@ the versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 A published module version is immutable: Go serves it from the proxy forever, so
 a release is corrected by another release and never by moving a tag.
 
+## [0.7.1] - 2026-11-20
+
+### Fixed
+
+- The module's own tables are widened to microseconds where an earlier framework
+  default created them in whole seconds, as the other hyz-is modules' are. A
+  migration (`20261120_0001_widen_investor_time_precision`) alters the date-time
+  columns of the eight tables that are below microseconds on PostgreSQL; a table
+  created in microseconds is left alone and SQLite has nothing to widen.
+
 ## [0.7.0] - 2026-11-19
 
 ### Added
