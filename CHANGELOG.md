@@ -8,6 +8,21 @@ the versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 A published module version is immutable: Go serves it from the proxy forever, so
 a release is corrected by another release and never by moving a tag.
 
+## [0.8.1] - 2026-11-21
+
+### Fixed
+
+- Ordering the admin's registry of investors by its type or its status was a
+  500. The table offers both orderings in its headers (`?sort=kind` and
+  `?sort=status`), and `InvestorService.List` allowed only `name` and
+  `created_at`, so it returned a plain error that the router answered with a
+  panic. `kind` (the investor's `person_kind`) and `status` are now ordering
+  columns of the registry.
+- A column the registry does not order by is a refused request, not a fault:
+  `List` answers `validation.Errors{"sort": ...}` (the new line
+  `validation.investors_sort`, in English and Brazilian Portuguese), which the
+  router sends back to the form, where it used to be an unexpected error.
+
 ## [0.8.0] - 2026-11-20
 
 ### Changed

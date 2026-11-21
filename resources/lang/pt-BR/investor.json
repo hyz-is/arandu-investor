@@ -357,6 +357,7 @@
         "report_year": "Informe um ano válido.",
         "account_required": "Escolha a conta que vai receber o pagamento.",
         "books_sort": "Não é possível ordenar os lançamentos por esta coluna.",
+        "investors_sort": "Não é possível ordenar os investidores por esta coluna.",
         "reason_required": "Informe o motivo, com até :max caracteres.",
         "account_details": "Descreva a conta: chave PIX, conta bancária ou endereço."
     },

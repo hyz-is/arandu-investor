@@ -2,7 +2,6 @@ package investor
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"time"
 
@@ -25,10 +24,16 @@ const (
 
 // sortableInvestor is the ordering allowlist. A column name taken directly
 // from a request would turn ordering into an injection surface.
+//
+// Every column the registry offers an ordering for is here, under the key the
+// table's header link carries: "kind" is the investor's person_kind and
+// "status" is its status.
 var sortableInvestor = map[string]string{
 	"":           "created_at",
 	"name":       "name",
 	"created_at": "created_at",
+	"kind":       "person_kind",
+	"status":     "status",
 }
 
 // InvestorService orchestrates the use cases of this package: it validates the
@@ -373,7 +378,10 @@ func (s *InvestorService) List(ctx context.Context, actor security.Subject, q da
 
 	column, ok := sortableInvestor[q.Sort]
 	if !ok {
-		return nil, fmt.Errorf("investor: sort field not allowed: %q", q.Sort)
+		// A column nobody offered is a refused request, not a fault: the
+		// router answers a validation.Errors, where an error of its own
+		// would have been a 500 for an address anybody can type.
+		return nil, validation.Errors{"sort": {message("investors_sort")}}
 	}
 
 	limit := q.Limit

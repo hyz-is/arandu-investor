@@ -357,6 +357,7 @@
         "report_year": "must be a calendar year",
         "account_required": "choose the account to be paid into",
         "books_sort": "is not a column the books can be ordered by",
+        "investors_sort": "is not a column the investors can be ordered by",
         "reason_required": "is required, up to :max characters",
         "account_details": "describe the account: a PIX key, a bank account, an address"
     },

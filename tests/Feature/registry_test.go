@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/arandu-io/framework/data"
 	"github.com/arandu-io/framework/security"
 	"github.com/arandu-io/framework/validation"
 	"github.com/arandu-io/hesape/database"
@@ -152,5 +153,28 @@ func TestAContractNeedsItsTermsAndItsFile(t *testing.T) {
 	var errs validation.Errors
 	if !errors.As(err, &errs) || !errs.Has("file") {
 		t.Fatalf("an empty file answered %v, want a file error", err)
+	}
+}
+
+// The registry's table offers an ordering on its name, type and status, and
+// each of the three is a column List can order by. One it did not offer is a
+// refused request (a validation error the router answers), never a fault.
+func TestTheRegistryIsOrderedByEveryColumnItOffers(t *testing.T) {
+	t.Parallel()
+	w := install(t)
+	registerPerson(t, w, "user-ana", cpfAna)
+	registerPerson(t, w, "user-bruno", cpfBruno)
+
+	for _, column := range []string{"", "name", "created_at", "kind", "status"} {
+		rows, err := w.svc.List(context.Background(), admin(), data.Query{Sort: column})
+		if err != nil || len(rows) != 2 {
+			t.Fatalf("ordering by %q answered %d rows, %v; want both investors", column, len(rows), err)
+		}
+	}
+
+	_, err := w.svc.List(context.Background(), admin(), data.Query{Sort: "document"})
+	var refused validation.Errors
+	if !errors.As(err, &refused) || len(refused["sort"]) != 1 {
+		t.Fatalf("ordering by a column nobody offered answered %v, want a validation error on sort", err)
 	}
 }
