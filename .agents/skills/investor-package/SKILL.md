@@ -126,6 +126,13 @@ wrote and did not get is worse than a number somebody wrote and was told about.
 | `GET` | `/investor/{id}` | `investor.show` |
 | `POST` | `/investor` | `investor.store` |
 
+The investor's own side is a handful of pages, each with only what is its own:
+the summary (`investor.me`), `investor.me.withdrawals`, `investor.me.contract`
+and `investor.me.reports`, with a menu of sections at the top of each. A page the
+application draws itself joins the menu through `Config.Sections` and draws it
+from `Module.SectionLinks(ctx, key)`; `Config.NextPayout` gives the summary the
+day the team pays.
+
 Every route sits behind `RequireAuth`, mounted by the package itself. A request
 with no session is sent to `/auth/login` — 303, or `YPY-Redirect` for a YPY
 request — and comes back to the address it asked for after signing in. That is

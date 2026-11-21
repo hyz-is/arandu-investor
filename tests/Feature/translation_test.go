@@ -258,14 +258,19 @@ func TestThePanelOffersReportsOnlyFromTheFirstContract(t *testing.T) {
 	router := fhttp.NewRouter().WithFlash(security.NewFlash([]byte(appKey), false)).WithRenderer(hview.NewRenderer())
 	module.Routes(router.ForModule(module.Name()))
 	m := mounted{router: router, sessions: sessions}
-	if rec := m.answer(t, http.MethodGet, investor.DefaultPrefix+"/me", "", m.signIn(t, user("user-ana"))...); rec.Code != http.StatusOK {
-		t.Fatalf("the panel answered %d: %s", rec.Code, rec.Body)
+	cookies := m.signIn(t, user("user-ana"))
+	if rec := m.answer(t, http.MethodGet, investor.DefaultPrefix+"/me/reports", "", cookies...); rec.Code != http.StatusOK {
+		t.Fatalf("the reports page answered %d: %s", rec.Code, rec.Body)
 	}
-	value, ok := drawn.Load(ana.Name)
+	value, ok := pagesDrawn.Load(investor.ViewReports + "/" + ana.Name)
 	if !ok {
-		t.Fatal("the panel drew no dashboard")
+		t.Fatal("the reports page drew nothing")
 	}
-	page := value.(investor.DashboardPageData)
+	page := value.(investor.ReportsPageData)
+	if rec := m.answer(t, http.MethodGet, investor.DefaultPrefix+"/me/contract", "", cookies...); rec.Code != http.StatusOK {
+		t.Fatalf("the contract page answered %d: %s", rec.Code, rec.Body)
+	}
+	contract, _ := pagesDrawn.Load(investor.ViewContract + "/" + ana.Name)
 
 	now := time.Now().In(time.FixedZone("BRT", -3*60*60))
 	if len(page.ReportMonths) == 0 || page.ReportMonths[0].Label != now.Format("01/2006") {
@@ -283,7 +288,7 @@ func TestThePanelOffersReportsOnlyFromTheFirstContract(t *testing.T) {
 	if got := page.ReportYears[len(page.ReportYears)-1].Label; got != "2026" {
 		t.Errorf("the oldest income report is %s, want 2026, the year the contract started", got)
 	}
-	if len(page.Contracts) != 1 || page.Contracts[0].Period != "20/09/2026 — em aberto" || page.Contracts[0].Ends != "em aberto" {
-		t.Errorf("the contract with no end reads %+v", page.Contracts)
+	if contracts := contract.(investor.ContractPageData).Contracts; len(contracts) != 1 || contracts[0].Period != "20/09/2026 — em aberto" || contracts[0].Ends != "em aberto" {
+		t.Errorf("the contract with no end reads %+v", contracts)
 	}
 }

@@ -176,6 +176,9 @@ func viewName(path string) string {
 // The screens this package renders, by the name their path gives them.
 const (
 	ViewDashboard       = "modules.investor.dashboard"
+	ViewWithdrawals     = "modules.investor.withdrawals"
+	ViewContract        = "modules.investor.contract"
+	ViewReports         = "modules.investor.reports"
 	ViewStatement       = "modules.investor.statement"
 	ViewProjection      = "modules.investor.projection"
 	ViewAdminInvestors  = "modules.investor.admin.investors"
@@ -184,6 +187,28 @@ const (
 	ViewAdminEntries    = "modules.investor.admin.entries"
 	ViewAdminWithdrawal = "modules.investor.admin.withdrawals"
 )
+
+// The sections of the investor's area the package draws, by the key a
+// Config.Sections entry names to say where it goes (Section.After) and the
+// current one is told by (Screen.Section).
+const (
+	SectionSummary     = "summary"
+	SectionWithdrawals = "withdrawals"
+	SectionContract    = "contract"
+	SectionReports     = "reports"
+)
+
+// Section is a page of the investor's area an application adds to the section
+// menu: Key tells it from the others, Label is what the menu says, URL where it
+// is, and After the key of the section it follows (empty goes last).
+type Section struct{ Key, Label, URL, After string }
+
+// SectionLink is one entry of the section menu as a screen draws it, in the
+// request's language, with the screen it is drawn on marked.
+type SectionLink struct {
+	Key, Label, URL string
+	Current         bool
+}
 
 // FormState is what a form field reads from the page it is drawn on: what was
 // typed before a refusal, and the message for each field.
@@ -209,6 +234,11 @@ type Screen struct {
 	Prefix string
 	// URLs are the addresses of the package's routes.
 	URLs URLs
+	// Section is the key of the section of the investor's area the screen
+	// belongs to, empty on the admin's screens; Sections is the whole menu,
+	// the section on show marked, and empty on the admin's.
+	Section  string
+	Sections []SectionLink
 
 	chrome any
 }
@@ -305,22 +335,59 @@ type InvoiceRow struct {
 // label, and its kind, PayoutPix or PayoutBank.
 type AccountOption struct{ ID, Label, Kind string }
 
-// DashboardPageData is the investor's own panel.
+// CurrentSection is the label of the section on show: what the menu's button
+// says. Empty on a screen that belongs to none.
+func (s Screen) CurrentSection() string {
+	for _, link := range s.Sections {
+		if link.Current {
+			return link.Label
+		}
+	}
+	return ""
+}
+
+// DashboardPageData is the investor's own panel, the summary: what is to be
+// received, what was received and, when the application says it, the next
+// payment. The lists have pages of their own (WithdrawalsPageData,
+// ContractPageData, ReportsPageData).
 type DashboardPageData struct {
 	Screen
 	Investor                                      string
 	Document                                      string
 	Available, Held, ReceivedYear, WithdrawnTotal string
-	Contracts                                     []ContractRow
-	Invoices                                      []InvoiceRow
-	Accounts                                      []AccountOption
-	Year, Month                                   int
-	// ReportsURL is the base of the reports; PixURL, the address a payout
-	// account is declared at, is the same as PayoutAccountsURL and kept for a
-	// published view that still reads it.
-	ReportsURL, PixURL, PayoutAccountsURL string
-	// ReportMonths and ReportYears are the reports offered: none before the
-	// investor's first contract started.
+	// NextPayout is the day of the next payment as the application said it
+	// (Config.NextPayout), empty when it did not. WithdrawableCount is how many
+	// closed periods can be withdrawn now.
+	NextPayout        string
+	WithdrawableCount int
+	Year, Month       int
+}
+
+// WithdrawalsPageData is the withdrawals screen: the periods that can be asked
+// for, what was asked and paid, and the accounts to be paid into.
+type WithdrawalsPageData struct {
+	Screen
+	Investor, Document string
+	Available, Held    string
+	NextPayout         string
+	Invoices           []InvoiceRow
+	Accounts           []AccountOption
+	PayoutAccountsURL  string
+}
+
+// ContractPageData is the contract screen: every version of the investor's
+// contracts, the one in force first.
+type ContractPageData struct {
+	Screen
+	Investor, Document string
+	Contracts          []ContractRow
+}
+
+// ReportsPageData is the reports screen: the files an investor can download.
+type ReportsPageData struct {
+	Screen
+	Investor, Document        string
+	ReportsURL                string
 	ReportMonths, ReportYears []ReportLink
 }
 

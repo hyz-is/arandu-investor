@@ -1,5 +1,40 @@
 # Upgrade Guide
 
+## v0.8.0
+
+The investor's panel is a handful of pages and `dashboard` is only the summary,
+so an application that published the views before has to take the new ones.
+Nothing is removed from the routes, the tables or the exported functions an
+application calls; what changes is the page data and the published views.
+
+`go get github.com/hyz-is/arandu-investor@v0.8.0`, then:
+
+- `aru vendor:publish --tag=view --apply` writes the three new views
+  (`modules/investor/withdrawals`, `contract` and `reports`) and, for an
+  application that never edited them, the new `dashboard`, `statement` and
+  `projection`. Run `aru view:build`.
+- An application that **edited** `dashboard.kyse.go` ports its copy by hand:
+  its helpers for the withdrawals, the accounts, the contract and the reports
+  move to the file of the page that draws them (the module's `withdrawals`,
+  `contract` and `reports` show where), and each page draws the menu in its
+  header with `SectionMenu(.Screen)` or its own component over `.Sections`. The
+  build says what is left in the wrong file: a helper declared twice, or a field
+  of `DashboardPageData` that moved to `WithdrawalsPageData`, `ContractPageData`
+  or `ReportsPageData` (`Contracts`, `Invoices`, `Accounts`, `ReportMonths`,
+  `ReportYears`, `ReportsURL`, `PixURL`, `PayoutAccountsURL`).
+- An application that mounts a page of its own in the area (a Faturamento next
+  to the summary) passes it as `Config.Sections` and draws the menu on it from
+  `Module.SectionLinks(ctx, key)`; `Config.NextPayout` gives the summary the
+  day the team pays.
+- An application that sets `Paths.Me` to something other than `/` and links to
+  the panel from its own pages finds the new pages under it (`Me` +
+  `Withdrawals`, `Contract`, `Reports`); `Module.URLs().MyWithdrawals()`,
+  `MyContract()` and `MyReports()` build them.
+- An application that overrides catalogue lines in its own translator keeps its
+  lines; the new ones (`section.*`, `screen.to_receive`, `screen.received`,
+  `screen.next_payout`, ...) are answered by the shipped catalogue until it
+  writes its own.
+
 ## v0.7.1
 
 Run `aru migrate`: one migration widens the module's date-time columns to

@@ -67,7 +67,8 @@ func statementTable(data StatementData) components.DataTableProps {
 			<h1 class="mt-1 text-2xl font-semibold tracking-tight">{{ .Labels.T("screen.statement_title") }}</h1>
 			<p class="text-muted-foreground mt-1 max-w-prose text-sm">{{ .Labels.T("screen.statement_lead") }}</p>
 		</div>
-		<nav class="flex gap-2">
+		<nav class="flex flex-wrap items-center gap-2">
+			{!! SectionMenu(.Screen) !!}
 			<a class="btn" data-variant="outline" data-size="sm" href="{{ .Contract.ProjectionURL }}">{{ .Labels.T("control.projection") }}</a>
 		</nav>
 	</header>

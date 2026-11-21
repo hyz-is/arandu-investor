@@ -160,7 +160,23 @@
         "pending_title": "Pedidos a pagar",
         "pending_empty": "Nenhum pedido esperando pagamento.",
         "open_ended": "em aberto",
-        "reports_empty": "Os relatórios começam a partir do primeiro contrato."
+        "reports_empty": "Os relatórios começam a partir do primeiro contrato.",
+        "withdrawals_page_title": "Saques",
+        "withdrawals_page_lead": "O que pode ser sacado, o que já foi pedido e pago, e para onde vai o dinheiro.",
+        "contract_lead": "A versão em vigor e as que ela substituiu.",
+        "reports_lead": "Planilhas (.xlsx) para o seu controle e para o imposto de renda.",
+        "summary_lead": "O que falta receber, o que você já recebeu e quando é o próximo pagamento.",
+        "to_receive": "A receber",
+        "received": "Já recebido",
+        "next_payout": "Próximo pagamento",
+        "in_payment": "Pedido, em pagamento",
+        "to_receive_note": "em períodos fechados, prontos para sacar",
+        "to_receive_none": "nada para sacar agora",
+        "received_note": "pago na sua conta de recebimento",
+        "next_payout_note": "dia em que a equipe paga o período fechado",
+        "in_payment_note": "pedido feito, aguardando a equipe pagar",
+        "withdraw_now": "Sacar",
+        "see_withdrawals": "Saques"
     },
     "control": {
         "search_label": "Buscar em :label",
@@ -381,5 +397,13 @@
         "10": "outubro",
         "11": "novembro",
         "12": "dezembro"
+    },
+    "section": {
+        "summary": "Resumo",
+        "withdrawals": "Saques",
+        "contract": "Contrato",
+        "reports": "Relatórios",
+        "menu": "Seções da área do investidor",
+        "menu_label": "Seções"
     }
 }

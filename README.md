@@ -252,6 +252,8 @@ field by its label ("Chave PIX: Preencha este campo.").
 | `AdminPrefix` | no | where the admin's routes are mounted. Defaults to `Prefix` + `Paths.Admin`. |
 | `Middleware`, `AdminMiddleware` | no | run after `RequireAuth`, on every route and on the admin's only. |
 | `Chrome` | no | what the application's layout draws around a screen (its sidebar, its menu), carried on the page as `Screen.Chrome()`. |
+| `Sections` | no | the pages the application adds to the investor's menu of sections, each after the one it names (`Section.After`); `Module.SectionLinks(ctx, key)` answers the same list for a page the application draws itself. |
+| `NextPayout` | no | when the investor is paid next, which only the application knows: the summary says it as a figure of its own. Nil draws what was asked for and is not yet paid. |
 | `Activity` | no | arandu-activitylog's logger; every act that changes something is recorded in the log `investor`. |
 
 An application that keeps the investor's screens in its customer panel and the
@@ -281,8 +283,11 @@ field to a JSON client).
 
 | method | path | what |
 | --- | --- | --- |
-| `GET` | `/investor/me` | the investor's panel |
-| `GET` | `/investor/me/contracts`, `/me/invoices` | the investor's contracts and invoices |
+| `GET` | `/investor/me` | the summary: what is to receive, what was received, the next payment |
+| `GET` | `/investor/me/withdrawals` | the closed periods with the request to withdraw, and the payout accounts |
+| `GET` | `/investor/me/contract` | the contract in force and the versions it replaced |
+| `GET` | `/investor/me/reports` | the reports to download |
+| `GET` | `/investor/me/contracts`, `/me/invoices` | the investor's contracts and invoices, as JSON |
 | `POST` | `/investor/me/payout-accounts` | declare a PIX key, or a bank account with `kind=bank` |
 | `GET` | `/investor/me/reports/{year}[/{month}]` | income report, monthly report |
 | `GET` | `/investor/contracts/{id}/statement`, `/projection`, `/file` | a contract's statement, open period, signed copy |

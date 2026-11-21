@@ -160,7 +160,23 @@
         "pending_title": "Requests to pay",
         "pending_empty": "No request is waiting to be paid.",
         "open_ended": "open-ended",
-        "reports_empty": "The reports start with your first contract."
+        "reports_empty": "The reports start with your first contract.",
+        "withdrawals_page_title": "Withdrawals",
+        "withdrawals_page_lead": "What can be asked for, what was asked and paid, and where the money goes.",
+        "contract_lead": "The version in force and the ones it replaced.",
+        "reports_lead": "Spreadsheets (.xlsx) for your own control and for income tax.",
+        "summary_lead": "What is left to receive, what you received and when you are paid next.",
+        "to_receive": "To receive",
+        "received": "Received",
+        "next_payout": "Next payment",
+        "in_payment": "Asked for, being paid",
+        "to_receive_note": "closed and ready to withdraw",
+        "to_receive_none": "nothing to withdraw now",
+        "received_note": "paid into your payout account",
+        "next_payout_note": "the day the team pays the closed period",
+        "in_payment_note": "asked for, waiting for the team to pay",
+        "withdraw_now": "Withdraw",
+        "see_withdrawals": "Withdrawals"
     },
     "control": {
         "search_label": "Search :label",
@@ -381,5 +397,13 @@
         "10": "October",
         "11": "November",
         "12": "December"
+    },
+    "section": {
+        "summary": "Summary",
+        "withdrawals": "Withdrawals",
+        "contract": "Contract",
+        "reports": "Reports",
+        "menu": "Sections of the investor area",
+        "menu_label": "Sections"
     }
 }

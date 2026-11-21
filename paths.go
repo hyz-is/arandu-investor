@@ -46,6 +46,14 @@ func (u URLs) AdminPrefix() string { return u.admin }
 // Me is the investor's own panel.
 func (u URLs) Me() string { return join(u.prefix, u.p.Me) }
 
+// MyWithdrawals is the investor's withdrawals screen: what can be asked for,
+// the payout accounts, and what was already asked and paid.
+func (u URLs) MyWithdrawals() string { return join(u.Me(), u.p.Withdrawals) }
+
+// MyContract is the investor's contract screen: the version in force and the
+// ones it replaced.
+func (u URLs) MyContract() string { return join(u.Me(), u.p.Contract) }
+
 // MyContracts lists the investor's own contracts.
 func (u URLs) MyContracts() string { return join(u.Me(), u.p.Contracts) }
 
@@ -156,6 +164,9 @@ func routeTable(c Config) []route {
 	return []route{
 		// The investor's own side.
 		{get, u.Me(), "investor.me", false},
+		{get, u.MyWithdrawals(), "investor.me.withdrawals", false},
+		{get, u.MyContract(), "investor.me.contract", false},
+		{get, u.MyReports(), "investor.me.reports", false},
 		{get, u.MyContracts(), "investor.me.contracts", false},
 		{get, u.ContractFile(id), "investor.contracts.file", false},
 		{get, u.Statement(id), "investor.contracts.statement", false},

@@ -143,7 +143,14 @@ func main() {
 	view.RegisterLayout("layouts.app", func(w io.Writer, _ any, sections map[string]func(io.Writer) error) error {
 		return sections["content"](w)
 	})
-	sc := investor.Screen{Labels: investor.Labels{Locale: "pt-BR"}, Prefix: "/investidor", URLs: investor.NewURLs("/investidor", "", investor.Paths{})}
+	urls := investor.NewURLs("/investidor", "", investor.Paths{})
+	sc := investor.Screen{Labels: investor.Labels{Locale: "pt-BR"}, Prefix: "/investidor", URLs: urls, Section: investor.SectionSummary,
+		Sections: []investor.SectionLink{
+			{Key: investor.SectionSummary, Label: "Resumo", URL: urls.Me(), Current: true},
+			{Key: investor.SectionWithdrawals, Label: "Saques", URL: urls.MyWithdrawals()},
+			{Key: investor.SectionContract, Label: "Contrato", URL: urls.MyContract()},
+			{Key: investor.SectionReports, Label: "Relatórios", URL: urls.MyReports()},
+		}}
 	contract := investor.ContractRow{ID: "c1", Number: "C-001", Share: "15,00%", Products: "Toda a aplicação", Status: "Ativo",
 		Starts: "01/10/2026", Ends: "em aberto", Period: "01/10/2026 — em aberto", Version: 1, BillingDay: 20, Active: true,
 		StatementURL: "/investidor/contracts/c1/statement", ProjectionURL: "/investidor/contracts/c1/projection",
@@ -160,15 +167,23 @@ func main() {
 		want []string
 	}{
 		{investor.ViewDashboard, investor.DashboardPageData{Screen: sc, Investor: "Ana Souza", Document: "529.982.247-25",
-			Available: "R$ 129,00", Held: "R$ 0,00", ReceivedYear: "R$ 129,00", WithdrawnTotal: "R$ 0,00",
-			Contracts: []investor.ContractRow{contract}, Invoices: []investor.InvoiceRow{invoice},
-			Accounts: []investor.AccountOption{{ID: "acc-1", Label: "PIX ana@example.com"}}, Year: 2026, Month: 10,
-			ReportsURL: "/investidor/me/reports", PixURL: "/investidor/me/payout-accounts", PayoutAccountsURL: "/investidor/me/payout-accounts",
+			Available: "R$ 129,00", Held: "R$ 0,00", ReceivedYear: "R$ 129,00", WithdrawnTotal: "R$ 40,00",
+			NextPayout: "20/11/2026", WithdrawableCount: 1, Year: 2026, Month: 10},
+			[]string{"Painel do investidor", "A receber", "R$ 129,00", "Já recebido", "R$ 40,00", "Próximo pagamento", "20/11/2026",
+				"Sacar", "/investidor/me/withdrawals#saque", "Resumo", "/investidor/me/contract", "/investidor/me/reports", "aria-haspopup"}},
+		{investor.ViewWithdrawals, investor.WithdrawalsPageData{Screen: sc, Investor: "Ana Souza", Document: "529.982.247-25",
+			Available: "R$ 129,00", Held: "R$ 0,00", Invoices: []investor.InvoiceRow{invoice},
+			Accounts: []investor.AccountOption{{ID: "acc-1", Label: "PIX ana@example.com"}}, PayoutAccountsURL: "/investidor/me/payout-accounts"},
+			[]string{"Saques", "Disponível", "PIX ana@example.com", "/investidor/invoices/i1/withdrawal", "Chave PIX", "Solicitar saque",
+				"Ver comprovante", "/investidor/invoices/i1/receipt", "/investidor/me/payout-accounts", "account_number", "Resumo"}},
+		{investor.ViewContract, investor.ContractPageData{Screen: sc, Investor: "Ana Souza", Document: "529.982.247-25",
+			Contracts: []investor.ContractRow{contract}},
+			[]string{"Contrato", "C-001", "01/10/2026 — em aberto", "/investidor/contracts/c1/statement", "Resumo"}},
+		{investor.ViewReports, investor.ReportsPageData{Screen: sc, Investor: "Ana Souza", Document: "529.982.247-25",
+			ReportsURL: "/investidor/me/reports",
 			ReportMonths: []investor.ReportLink{{Label: "10/2026", URL: "/investidor/me/reports/2026/10"}},
 			ReportYears:  []investor.ReportLink{{Label: "2026", URL: "/investidor/me/reports/2026"}}},
-			[]string{"Disponível", "R$ 129,00", "C-001", "PIX ana@example.com", "/investidor/invoices/i1/withdrawal", "/investidor/me/reports/2026/10",
-				"Chave PIX", "Solicitar saque", "Ver comprovante", "/investidor/invoices/i1/receipt", "/investidor/me/payout-accounts", "account_number",
-				"Painel do investidor", "01/10/2026 — em aberto", "/investidor/me/reports/2026\""}},
+			[]string{"Relatórios", "/investidor/me/reports/2026/10", "/investidor/me/reports/2026\"", "Resumo"}},
 		{investor.ViewStatement, investor.StatementPageData{Screen: sc, Contract: contract,
 			Rows: []investor.StatementRow{{ID: "e1", Day: "05/10/2026", Product: "loccrm", Kind: "Venda", Description: "Plano",
 				Gross: "R$ 199,00", Fee: "R$ 7,98", Cost: "R$ 19,90", Net: "R$ 171,12", Estimate: true}},

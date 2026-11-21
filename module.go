@@ -170,6 +170,9 @@ func (m *Module) register(r *fhttp.Router, admin bool) {
 func (m *Module) handlers() map[string]func(*fhttp.Context) error {
 	return map[string]func(*fhttp.Context) error{
 		"investor.me":                         m.mine,
+		"investor.me.withdrawals":             m.myWithdrawals,
+		"investor.me.contract":                m.myContract,
+		"investor.me.reports":                 m.myReports,
 		"investor.me.contracts":               m.myContracts,
 		"investor.contracts.file":             m.contractFile,
 		"investor.contracts.statement":        m.statement,
@@ -226,6 +229,49 @@ func (m *Module) screen(ctx *fhttp.Context, who security.Subject, titleKey strin
 		sc.chrome = chrome
 	}
 	return sc, nil
+}
+
+// investorScreen is screen for a page of the investor's area: the same
+// screen with the section menu, the section it belongs to marked.
+func (m *Module) investorScreen(ctx *fhttp.Context, who security.Subject, titleKey, section string) (Screen, error) {
+	sc, err := m.screen(ctx, who, titleKey, false)
+	if err != nil {
+		return Screen{}, err
+	}
+	sc.Section = section
+	sc.Sections = m.SectionLinks(ctx.Ctx(), section)
+	return sc, nil
+}
+
+// SectionLinks is the section menu of the investor's area, in the language of
+// the request, with the section whose key is given marked as the current one:
+// the package's four sections in their order, and Config.Sections each after
+// the one it names. A page the application draws itself calls it to put the
+// same menu on its own screen.
+func (m *Module) SectionLinks(ctx context.Context, current string) []SectionLink {
+	labels := m.Labels(m.locale(ctx))
+	u := m.URLs()
+	links := []SectionLink{
+		{Key: SectionSummary, Label: labels.T("section.summary"), URL: u.Me()},
+		{Key: SectionWithdrawals, Label: labels.T("section.withdrawals"), URL: u.MyWithdrawals()},
+		{Key: SectionContract, Label: labels.T("section.contract"), URL: u.MyContract()},
+		{Key: SectionReports, Label: labels.T("section.reports"), URL: u.MyReports()},
+	}
+	for _, extra := range m.cfg.Sections {
+		at := len(links)
+		for i, link := range links {
+			if link.Key == extra.After {
+				at = i + 1
+			}
+		}
+		links = append(links, SectionLink{})
+		copy(links[at+1:], links[at:])
+		links[at] = SectionLink{Key: extra.Key, Label: extra.Label, URL: extra.URL}
+	}
+	for i := range links {
+		links[i].Current = links[i].Key == current
+	}
+	return links
 }
 
 // documentTitle is what the browser tab shows for a screen: its title, and
@@ -438,7 +484,50 @@ func (m *Module) mine(ctx *fhttp.Context) error {
 	if ctx.WantsJSON() {
 		return ctx.JSON(stdhttp.StatusOK, resourceFromPointer(record))
 	}
-	contracts, err := m.svc.InvestorContracts(ctx.Ctx(), who, record.ID)
+	invoices, err := m.svc.InvoiceViews(ctx.Ctx(), who, record.ID)
+	if err != nil {
+		return err
+	}
+	sc, err := m.investorScreen(ctx, who, "screen.dashboard_title", SectionSummary)
+	if err != nil {
+		return err
+	}
+	now := time.Now().In(m.cfg.Location)
+	available, held, year, withdrawn := invoiceTotals(invoices, now.Year())
+	row := investorRow(m.URLs(), sc.Labels, record)
+	return ctx.View(ViewDashboard, DashboardPageData{
+		Screen:            sc,
+		Investor:          row.Name,
+		Document:          row.Document,
+		Available:         brl(available),
+		Held:              brl(held),
+		ReceivedYear:      brl(year),
+		WithdrawnTotal:    brl(withdrawn),
+		NextPayout:        m.nextPayout(ctx, who),
+		WithdrawableCount: withdrawableCount(invoices),
+		Year:              now.Year(),
+		Month:             int(now.Month()),
+	})
+}
+
+// nextPayout is the day of the next payment as the application says it, empty
+// when it does not or has none to give.
+func (m *Module) nextPayout(ctx *fhttp.Context, who security.Subject) string {
+	if m.cfg.NextPayout == nil {
+		return ""
+	}
+	day, err := m.cfg.NextPayout(ctx.Ctx(), who)
+	if err != nil || day.IsZero() {
+		return ""
+	}
+	return dayText(day)
+}
+
+// myWithdrawals is the investor's withdrawals screen: the closed periods with
+// what can be asked for, and the accounts the money goes to.
+func (m *Module) myWithdrawals(ctx *fhttp.Context) error {
+	who, _ := ctx.User()
+	record, err := m.svc.Mine(ctx.Ctx(), who)
 	if err != nil {
 		return err
 	}
@@ -450,32 +539,62 @@ func (m *Module) mine(ctx *fhttp.Context) error {
 	if err != nil {
 		return err
 	}
-	sc, err := m.screen(ctx, who, "screen.dashboard_title", false)
+	sc, err := m.investorScreen(ctx, who, "screen.withdrawals_page_title", SectionWithdrawals)
 	if err != nil {
 		return err
 	}
-	now := time.Now().In(m.cfg.Location)
-	available, held, year, withdrawn := invoiceTotals(invoices, now.Year())
+	available, held, _, _ := invoiceTotals(invoices, time.Now().In(m.cfg.Location).Year())
 	row := investorRow(m.URLs(), sc.Labels, record)
-	months, years := reportLinks(m.URLs().MyReports(), contracts, now)
-	return ctx.View(ViewDashboard, DashboardPageData{
-		Screen:            sc,
-		Investor:          row.Name,
-		Document:          row.Document,
-		Available:         brl(available),
-		Held:              brl(held),
-		ReceivedYear:      brl(year),
-		WithdrawnTotal:    brl(withdrawn),
-		Contracts:         contractRows(m.URLs(), sc.Labels, contracts),
-		Invoices:          invoiceRows(m.URLs(), sc.Labels, invoices),
-		Accounts:          accountOptions(accounts),
-		Year:              now.Year(),
-		Month:             int(now.Month()),
-		ReportsURL:        m.URLs().MyReports(),
-		PixURL:            m.URLs().PayoutAccounts(),
+	return ctx.View(ViewWithdrawals, WithdrawalsPageData{
+		Screen: sc, Investor: row.Name, Document: row.Document,
+		Available: brl(available), Held: brl(held), NextPayout: m.nextPayout(ctx, who),
+		Invoices: invoiceRows(m.URLs(), sc.Labels, invoices), Accounts: accountOptions(accounts),
 		PayoutAccountsURL: m.URLs().PayoutAccounts(),
-		ReportMonths:      months,
-		ReportYears:       years,
+	})
+}
+
+// myContract is the investor's contract screen.
+func (m *Module) myContract(ctx *fhttp.Context) error {
+	who, _ := ctx.User()
+	record, err := m.svc.Mine(ctx.Ctx(), who)
+	if err != nil {
+		return err
+	}
+	contracts, err := m.svc.InvestorContracts(ctx.Ctx(), who, record.ID)
+	if err != nil {
+		return err
+	}
+	sc, err := m.investorScreen(ctx, who, "section.contract", SectionContract)
+	if err != nil {
+		return err
+	}
+	row := investorRow(m.URLs(), sc.Labels, record)
+	return ctx.View(ViewContract, ContractPageData{
+		Screen: sc, Investor: row.Name, Document: row.Document,
+		Contracts: contractRows(m.URLs(), sc.Labels, contracts),
+	})
+}
+
+// myReports is the investor's reports screen.
+func (m *Module) myReports(ctx *fhttp.Context) error {
+	who, _ := ctx.User()
+	record, err := m.svc.Mine(ctx.Ctx(), who)
+	if err != nil {
+		return err
+	}
+	contracts, err := m.svc.InvestorContracts(ctx.Ctx(), who, record.ID)
+	if err != nil {
+		return err
+	}
+	sc, err := m.investorScreen(ctx, who, "screen.reports_title", SectionReports)
+	if err != nil {
+		return err
+	}
+	row := investorRow(m.URLs(), sc.Labels, record)
+	months, years := reportLinks(m.URLs().MyReports(), contracts, time.Now().In(m.cfg.Location))
+	return ctx.View(ViewReports, ReportsPageData{
+		Screen: sc, Investor: row.Name, Document: row.Document,
+		ReportsURL: m.URLs().MyReports(), ReportMonths: months, ReportYears: years,
 	})
 }
 
@@ -699,7 +818,7 @@ func (m *Module) statement(ctx *fhttp.Context) error {
 	if ctx.WantsJSON() {
 		return ctx.JSON(stdhttp.StatusOK, statementResource{st})
 	}
-	sc, err := m.screen(ctx, who, "screen.statement_title", false)
+	sc, err := m.investorScreen(ctx, who, "screen.statement_title", SectionContract)
 	if err != nil {
 		return err
 	}
@@ -727,7 +846,7 @@ func (m *Module) projection(ctx *fhttp.Context) error {
 	if ctx.WantsJSON() {
 		return ctx.JSON(stdhttp.StatusOK, projectionResource{p})
 	}
-	sc, err := m.screen(ctx, who, "screen.projection_title", false)
+	sc, err := m.investorScreen(ctx, who, "screen.projection_title", SectionContract)
 	if err != nil {
 		return err
 	}
@@ -843,7 +962,7 @@ func (m *Module) withdrawInvoice(ctx *fhttp.Context) error {
 		return err
 	}
 	if !ctx.WantsJSON() {
-		return ctx.Redirect(m.URLs().Me())
+		return ctx.Redirect(m.URLs().MyWithdrawals())
 	}
 	return ctx.JSON(stdhttp.StatusCreated, invoiceViewsResource([]InvoiceView{*view}))
 }
@@ -1077,7 +1196,7 @@ func (m *Module) storePayoutAccount(ctx *fhttp.Context) error {
 		return err
 	}
 	if !ctx.WantsJSON() {
-		return ctx.Redirect(m.URLs().Me())
+		return ctx.Redirect(m.URLs().MyWithdrawals())
 	}
 	return ctx.JSON(stdhttp.StatusCreated, fieldsResource{"id": account.ID, "kind": account.Kind, "label": account.Label})
 }

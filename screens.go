@@ -300,6 +300,17 @@ func invoiceTotals(views []InvoiceView, year int) (available, held, receivedYear
 	return available, held, receivedYear, withdrawn
 }
 
+// withdrawableCount is how many closed periods can be asked for now.
+func withdrawableCount(views []InvoiceView) int {
+	n := 0
+	for _, v := range views {
+		if v.Withdrawable() {
+			n++
+		}
+	}
+	return n
+}
+
 // accountOptions are the payout accounts a withdrawal can go to.
 func accountOptions(accounts []*wallet.PayoutAccount) []AccountOption {
 	out := make([]AccountOption, 0, len(accounts))

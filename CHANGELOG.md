@@ -8,6 +8,43 @@ the versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 A published module version is immutable: Go serves it from the proxy forever, so
 a release is corrected by another release and never by moving a tag.
 
+## [0.8.0] - 2026-11-20
+
+### Changed
+
+- The investor's panel is split into pages, each with only what is its own, and
+  a menu at the top of every one reaches the others. `GET /me` is the summary:
+  what is to receive, what was received and, when the application says it, the
+  next payment. The lists moved out of it: `GET /me/withdrawals` (the closed
+  periods with the request to withdraw, and the payout accounts),
+  `GET /me/contract` (every version of the contract) and `GET /me/reports` (the
+  files to download). Each is drawn by a published view of its own
+  (`modules/investor/withdrawals`, `contract` and `reports`); `dashboard` is the
+  summary and holds `SectionMenu`, which the other pages and the statement and
+  projection draw in their header.
+- `DashboardPageData` carries what the summary draws (`NextPayout`,
+  `WithdrawableCount` and the four totals) and no longer the contracts,
+  invoices, accounts and report links, which are the data of the new pages
+  (`WithdrawalsPageData`, `ContractPageData`, `ReportsPageData`). The summary
+  reads the invoices and nothing more.
+- Asking for a withdrawal and declaring a payout account, both forms of the
+  withdrawals page, send the browser back to that page and not to the summary.
+
+### Added
+
+- `Config.Sections` adds the application's own pages to the menu, each after a
+  section it names (`Section.After`), and `Module.SectionLinks` answers the same
+  list in the request's language for a page the application draws itself.
+  `Screen.Sections` and `Screen.Section` carry it on every investor screen.
+- `Config.NextPayout` tells the summary when the investor is paid next, which
+  only the application knows. Nil draws the money asked for and not yet paid
+  in its place.
+- `Paths.Contract` (`/contract`, `/contrato`) and the routes
+  `investor.me.withdrawals`, `investor.me.contract` and `investor.me.reports`.
+  The JSON routes `/me/contracts` and `/me/invoices` are as they were.
+- The lines `section.*` and the `screen.*` lines of the summary, in English and
+  Brazilian Portuguese.
+
 ## [0.7.1] - 2026-11-20
 
 ### Fixed

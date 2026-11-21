@@ -1,6 +1,7 @@
 package investor
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strings"
@@ -129,6 +130,22 @@ type Config struct {
 	// more.
 	Chrome func(ctx *fhttp.Context, req ChromeRequest) (any, error)
 
+	// Sections are the pages the application adds to the investor's area,
+	// beside the four this package draws (SectionSummary, SectionWithdrawals,
+	// SectionContract, SectionReports). Every investor screen carries the list
+	// as Screen.Sections, which the section menu draws, so a page the
+	// application owns shows up in the same menu as the package's. Each needs a
+	// Key of its own, a Label and a URL; After names the key of the section it
+	// follows, and an empty one goes last. Nil adds none.
+	Sections []Section
+
+	// NextPayout is when the investor is paid next, which only the application
+	// knows: the package closes a period, and the day the team pays it is the
+	// application's. The summary says it as a figure of its own when it is set
+	// and a zero Day, or an error, leaves the figure out. Nil draws the money
+	// the investor has asked for and not yet received in its place.
+	NextPayout func(ctx context.Context, who security.Subject) (Day, error)
+
 	// Activity is arandu-activitylog's logger, the application's one instance
 	// (activityModule.Logger()). Every act that changes something -- an
 	// investor, a contract, an entry, a cost, a closing, a payout account, a
@@ -157,9 +174,12 @@ type ChromeRequest struct {
 // investor's own panel at Prefix itself.
 //
 //	GET  Prefix + Me                                 the investor's panel
-//	GET  Prefix + Me + Contracts                     their contracts
-//	GET  Prefix + Me + Invoices                      their invoices
-//	GET  Prefix + Me + Reports + /{year}[/{month}]   their reports
+//	GET  Prefix + Me + Withdrawals                   their withdrawals and payout accounts
+//	GET  Prefix + Me + Contract                      their contract, version by version
+//	GET  Prefix + Me + Reports                       the reports they can download
+//	GET  Prefix + Me + Contracts                     their contracts, as JSON
+//	GET  Prefix + Me + Invoices                      their invoices, as JSON
+//	GET  Prefix + Me + Reports + /{year}[/{month}]   a report
 //	POST Prefix + Me + PayoutAccounts                a payout account
 //	GET  Prefix + Contracts + /{id} + File|Statement|Projection
 //	GET  Prefix + Costs
@@ -172,6 +192,7 @@ type ChromeRequest struct {
 // Payment and Rejection).
 type Paths struct {
 	Me, Contracts, Invoices, Reports, PayoutAccounts string
+	Contract                                         string
 	File, Statement, Projection, Costs               string
 	Withdrawal, Receipt                              string
 	Admin, Investors, Suspension, Amendments         string
@@ -182,7 +203,8 @@ type Paths struct {
 // DefaultPaths are the English segments, the addresses of earlier releases.
 var DefaultPaths = Paths{
 	Me: "/me", Contracts: "/contracts", Invoices: "/invoices", Reports: "/reports", PayoutAccounts: "/payout-accounts",
-	File: "/file", Statement: "/statement", Projection: "/projection", Costs: "/costs",
+	Contract: "/contract",
+	File:     "/file", Statement: "/statement", Projection: "/projection", Costs: "/costs",
 	Withdrawal: "/withdrawal", Receipt: "/receipt",
 	Admin: "/admin", Investors: "/investors", Suspension: "/suspension", Amendments: "/amendments",
 	Closings: "/closings", Due: "/due", Entries: "/entries", Reversal: "/reversal", End: "/end",
@@ -195,7 +217,8 @@ var DefaultPaths = Paths{
 // /conta-de-recebimento, and the admin's /investidores and /saques.
 var PortuguesePaths = Paths{
 	Me: "/", Contracts: "/contratos", Invoices: "/faturas", Reports: "/relatorios", PayoutAccounts: "/conta-de-recebimento",
-	File: "/arquivo", Statement: "/extrato", Projection: "/projecao", Costs: "/custos",
+	Contract: "/contrato",
+	File:     "/arquivo", Statement: "/extrato", Projection: "/projecao", Costs: "/custos",
 	Withdrawal: "/saque", Receipt: "/comprovante",
 	Admin: "/admin", Investors: "/investidores", Suspension: "/suspensao", Amendments: "/aditivos",
 	Closings: "/fechamentos", Due: "/vencidos", Entries: "/lancamentos", Reversal: "/estorno", End: "/encerramento",
@@ -212,7 +235,7 @@ func (p *Paths) fields() []struct {
 		value *string
 	}{
 		{"Me", &p.Me}, {"Contracts", &p.Contracts}, {"Invoices", &p.Invoices}, {"Reports", &p.Reports},
-		{"PayoutAccounts", &p.PayoutAccounts}, {"File", &p.File}, {"Statement", &p.Statement},
+		{"PayoutAccounts", &p.PayoutAccounts}, {"Contract", &p.Contract}, {"File", &p.File}, {"Statement", &p.Statement},
 		{"Projection", &p.Projection}, {"Costs", &p.Costs}, {"Withdrawal", &p.Withdrawal}, {"Receipt", &p.Receipt},
 		{"Admin", &p.Admin}, {"Investors", &p.Investors}, {"Suspension", &p.Suspension},
 		{"Amendments", &p.Amendments}, {"Closings", &p.Closings}, {"Due", &p.Due}, {"Entries", &p.Entries},
@@ -271,6 +294,9 @@ func (c Config) Validate() error {
 			return fmt.Errorf("investor: Config.Middleware[%d] is nil", i)
 		}
 	}
+	if err := validateSections(c.Sections); err != nil {
+		return err
+	}
 	for i, mw := range c.AdminMiddleware {
 		if mw == nil {
 			return fmt.Errorf("investor: Config.AdminMiddleware[%d] is nil", i)
@@ -287,6 +313,23 @@ func (c Config) Validate() error {
 	}
 	if c.PageSize < 0 || c.PageSize > MaxPageSize {
 		return fmt.Errorf("investor: Config.PageSize is %d, and has to be between 0 and %d, where 0 means %d", c.PageSize, MaxPageSize, DefaultPageSize)
+	}
+	return nil
+}
+
+// validateSections refuses a section the menu could not draw or could not tell
+// from another: no key, label or address, a key twice, or a key of the package's
+// own.
+func validateSections(sections []Section) error {
+	seen := map[string]bool{SectionSummary: true, SectionWithdrawals: true, SectionContract: true, SectionReports: true}
+	for i, section := range sections {
+		switch {
+		case section.Key == "" || section.Label == "" || section.URL == "":
+			return fmt.Errorf("investor: Config.Sections[%d] needs a Key, a Label and a URL", i)
+		case seen[section.Key]:
+			return fmt.Errorf("investor: Config.Sections[%d] has the key %q, which another section has", i, section.Key)
+		}
+		seen[section.Key] = true
 	}
 	return nil
 }

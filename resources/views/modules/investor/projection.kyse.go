@@ -53,7 +53,8 @@ func projectionTable(data ProjectionData) components.DataTableProps {
 			<p class="text-muted-foreground mt-1 max-w-prose text-sm">{{ .Labels.T("screen.projection_lead") }}</p>
 			<p class="mt-2 text-sm font-medium">{{ .PeriodStart }} a {{ .PeriodEnd }}</p>
 		</div>
-		<nav class="flex gap-2">
+		<nav class="flex flex-wrap items-center gap-2">
+			{!! SectionMenu(.Screen) !!}
 			<a class="btn" data-variant="outline" data-size="sm" href="{{ .Contract.StatementURL }}">{{ .Labels.T("control.statement") }}</a>
 		</nav>
 	</header>
