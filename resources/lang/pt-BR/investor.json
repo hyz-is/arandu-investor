@@ -364,6 +364,8 @@
         "transfer_user_taken": "Este acesso já é de outro investidor.",
         "transfer_document_taken": "Este documento já é de outro investidor.",
         "transfer_future_day": "A data não pode ser futura.",
+        "transfer_day_before_created": "A data não pode ser anterior ao cadastro do investidor.",
+        "transfer_day_before_last": "A data não pode ser anterior a :day, a da última transferência.",
         "transfer_funds": "A carteira do dono anterior ainda tem saldo: pague o valor antes da transferência.",
         "transfer_withdrawals": "O dono anterior tem um saque em andamento: conclua o saque antes da transferência.",
         "reason_required": "Informe o motivo, com até :max caracteres.",

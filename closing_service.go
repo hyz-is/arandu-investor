@@ -273,6 +273,18 @@ func (s *InvestorService) closeContract(ctx context.Context, actor security.Subj
 	invoice.ClosedAt, invoice.CreatedAt, invoice.UpdatedAt = now, now, now
 
 	err = database.Transaction(ctx, s.db, func(ctx context.Context) error {
+		// The investor's row is locked and read again: a transfer that passed
+		// the registration to another person while this closing was being
+		// computed has changed whose wallet the money belongs in, and a
+		// suspension the closing did not see still stops it.
+		locked, err := s.lockInvestor(ctx, g, owner.ID)
+		if err != nil {
+			return err
+		}
+		owner = locked
+		if !owner.IsActive() {
+			return validation.Errors{"investor": {message("investor_suspended")}}
+		}
 		// An invoice still waiting when the next period closes is overdue: still
 		// the investor's to withdraw, and still its own period's.
 		waiting, err := Invoices(s.db).Where("root_id", "=", rootID).

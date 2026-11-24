@@ -130,7 +130,7 @@ func (s *InvestorService) AddPixAccount(ctx context.Context, actor security.Subj
 	if err != nil {
 		return nil, err
 	}
-	if err := s.record(ctx, g, actor, EventPayoutAccountAdded, "investor", me.ID, map[string]any{"account_id": account.ID, "kind": account.Kind, "label": account.Label}); err != nil {
+	if err := s.record(ctx, g, actor, EventPayoutAccountAdded, "investor", me.ID, map[string]any{"account_id": account.ID, "kind": account.Kind, "key_type": keyType, "label": "PIX " + maskPixKey(key)}); err != nil {
 		return nil, err
 	}
 	return account, nil
@@ -171,7 +171,7 @@ func (s *InvestorService) AddBankAccount(ctx context.Context, actor security.Sub
 	if err != nil {
 		return nil, err
 	}
-	if err := s.record(ctx, g, actor, EventPayoutAccountAdded, "investor", me.ID, map[string]any{"account_id": account.ID, "kind": account.Kind, "label": account.Label}); err != nil {
+	if err := s.record(ctx, g, actor, EventPayoutAccountAdded, "investor", me.ID, map[string]any{"account_id": account.ID, "kind": account.Kind, "label": bank + " · " + branch + " · " + maskPixKey(number)}); err != nil {
 		return nil, err
 	}
 	return account, nil
@@ -346,7 +346,8 @@ func (s *InvestorService) PayInvestorWithdrawal(ctx context.Context, actor secur
 	if err != nil {
 		return nil, err
 	}
-	if _, err := Invoices(s.db).Where("withdrawal_request_id", "=", in.RequestID).First(ctx, g); err != nil {
+	paid, err := Invoices(s.db).Where("withdrawal_request_id", "=", in.RequestID).First(ctx, g)
+	if err != nil {
 		return nil, err
 	}
 	if _, err := s.invoiceOfRequest(ctx, actor, g, in.RequestID, EntriesManage); err != nil {
@@ -355,6 +356,16 @@ func (s *InvestorService) PayInvestorWithdrawal(ctx context.Context, actor secur
 	req, err := s.wallets.PayWithdrawal(ctx, actor, in, receipt)
 	if err != nil {
 		return nil, err
+	}
+	// The invoice remembers it was paid, in a status of its own: what
+	// arandu-wallet says about the request is read by whoever asks, and the
+	// holder of a request is not always the one who asks later.
+	if paid != nil && paid.Status != InvoiceWithdrawn {
+		paid.Status = InvoiceWithdrawn
+		paid.UpdatedAt = s.now()
+		if _, err := paid.Save(ctx, g); err != nil {
+			return nil, err
+		}
 	}
 	if err := s.recordWithdrawal(ctx, g, actor, EventWithdrawalPaid, req, map[string]any{
 		"end_to_end_id": req.EndToEndID, "receipt_name": req.ReceiptName, "receipt_sha256": req.ReceiptSHA256,
@@ -417,4 +428,15 @@ func (s *InvestorService) AdminCosts(ctx context.Context, actor security.Subject
 		return nil, err
 	}
 	return s.loadCosts(ctx, g)
+}
+
+// maskPixKey keeps the first two and the last two characters of a PIX key,
+// enough to tell two keys of one person apart in the activity log and not
+// enough to use one. A short key is hidden whole.
+func maskPixKey(key string) string {
+	runes := []rune(strings.TrimSpace(key))
+	if len(runes) <= 6 {
+		return strings.Repeat("*", len(runes))
+	}
+	return string(runes[:2]) + strings.Repeat("*", len(runes)-4) + string(runes[len(runes)-2:])
 }

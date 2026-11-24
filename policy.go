@@ -23,7 +23,9 @@ const (
 	// contract's period.
 	EntriesManage security.Action = "investor.entries.manage"
 	// InvestorsTransfer is passing an investor, with its contracts and its
-	// books, to another person.
+	// books, to another person. It is not part of what the admin role or
+	// AdminAction opens: it changes whose money a registration is, so the
+	// application grants it on its own, to the few who may.
 	InvestorsTransfer security.Action = "investor.investors.transfer"
 	// CostsManage is declaring the costs of the system.
 	CostsManage security.Action = "investor.costs.manage"
@@ -110,9 +112,16 @@ func (InvestorPolicy) Can(ctx context.Context, s security.Subject, a security.Ac
 	// is refused to everybody until a rule names it.
 	if IsAdmin(s) {
 		switch a {
-		case InvestorsManage, InvestorsTransfer, EntriesManage, CostsManage, DashboardView, ContractView, ReportsView:
+		case InvestorsManage, EntriesManage, CostsManage, DashboardView, ContractView, ReportsView:
 			return nil
 		}
+	}
+
+	// Passing an investor to another person is the one act the admin does not
+	// carry: it is held by the action itself, in the account of whoever the
+	// application trusts with it, and by nobody through a role.
+	if a == InvestorsTransfer && s.Can(InvestorsTransfer) {
+		return nil
 	}
 
 	// What an investor reads about themselves. The probe -- the empty record --

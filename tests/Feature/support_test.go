@@ -94,7 +94,15 @@ func install(t *testing.T) world {
 // admin is the finance team of the tenant: this package's admin, and
 // arandu-wallet's operator, because closing a period deposits money.
 func admin() security.Subject {
-	return security.Subject{ID: "finance-1", Tenant: tenant, Roles: []string{investor.AdminRole, wallet.OperatorRole}, Verified: true}
+	return security.Subject{ID: "finance-1", Tenant: tenant, Roles: []string{investor.AdminRole, wallet.OperatorRole}, Actions: []security.Action{investor.InvestorsTransfer}, Verified: true}
+}
+
+// adminWithoutTransfer is the finance team with no right to pass an investor
+// to another person: the admin role alone.
+func adminWithoutTransfer() security.Subject {
+	s := admin()
+	s.Actions = nil
+	return s
 }
 
 // user is a signed-in person of the tenant with no role of this package.

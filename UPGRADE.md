@@ -1,5 +1,28 @@
 # Upgrade Guide
 
+## v0.9.2
+
+No migration, no new address and no removed symbol. Two things need a look.
+
+- **The transfer needs its own permission.** `InvestorsTransfer`
+  (`investor.investors.transfer`) is no longer opened by the admin role or by
+  `AdminAction`. An application that calls `Service().Transfer` (a command, a
+  screen) grants the action to the accounts that may: in arandu-permission, put
+  `investor.investors.transfer` in a group of its own, and mount `Roles()` in
+  `Config.Middleware` (or give the subject the action another way). Without it
+  the transfer answers `security.ErrForbidden`. The subject also needs
+  arandu-wallet's operator role, as before. A test that lists the admin's
+  actions drops this one from the list.
+- **One database handle.** arandu-wallet, arandu-activitylog and this package
+  have to be built over the same `*data.DB`; over three, the closing and the
+  transfer are not atomic with the wallet and the log.
+
+Invoices paid before this version keep reading as paid for their owner, from
+the withdrawal request, as they did. A transfer made with this version marks the
+registration's paid invoices `withdrawn`; a registration already transferred by
+0.9.0 or 0.9.1 with a paid invoice should be checked by hand: the new owner may
+see that invoice as available, and it must not be withdrawn.
+
 ## v0.9.1
 
 Run `aru migrate`: one migration widens the date-time columns of

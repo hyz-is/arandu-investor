@@ -74,6 +74,9 @@ error can leave; the database and the session store are the ones the framework
 built from the configuration:
 
 ```go
+	// walletModule, activityModule and investorModule share drivers.DB: the
+	// closing, the transfer and the withdrawal write this package's tables and
+	// arandu-wallet's in one transaction, and that holds only over one handle.
 	investorModule, err := investor.New(investor.Config{
 		Files:  contractsDisk,         // the application's filesystem.Disk, local or S3
 		Wallet: walletModule.Service(), // the one arandu-wallet instance
@@ -111,6 +114,7 @@ The policy is in `policy.go`, and roles reach it through the Subject, which
 | role or action | what it opens |
 | --- | --- |
 | role `investor.admin`, or action `investor.admin` (`AdminAction`) | the registry, contracts, entries, costs, closings, every investor's invoices and reports |
+| action `investor.investors.transfer` (`InvestorsTransfer`) | passing an investor to another person, and nothing else; no role carries it |
 | role `wallet.operator` | arandu-wallet's operator actions; the admin who pays withdrawals and closes periods needs it too |
 
 The action is what an arandu-permission group carries: mount its `Roles()` in
@@ -190,7 +194,12 @@ The registration's login user, document, names and e-mail become the new
 owner's, and what they were is kept in a row of `investor_transfers`
 (`Service().Transfers` lists them by the day they took effect). The act is in
 arandu-activitylog with the owner before and the owner after, the documents
-masked. It needs `InvestorsTransfer`, which the admin role and action carry.
+masked. It needs `InvestorsTransfer`, an action of its own that the admin role
+and `AdminAction` do **not** carry: it changes whose money a registration is, so
+the application puts it in the group of the few who may (and that person needs
+arandu-wallet's operator role too). Everything the transfer decides is read
+again after the investor's row is locked, and the act and its entry in the
+activity log are one transaction.
 
 The previous owner's payout accounts in arandu-wallet are disabled, so the new
 owner declares their own. The transfer is refused, and nothing changes, while

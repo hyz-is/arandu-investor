@@ -364,6 +364,8 @@
         "transfer_user_taken": "is already the login of another investor",
         "transfer_document_taken": "is already the document of another investor",
         "transfer_future_day": "cannot be a day still to come",
+        "transfer_day_before_created": "cannot be before the day the registration was made",
+        "transfer_day_before_last": "cannot be before :day, the day of the last transfer",
         "transfer_funds": "the previous owner's wallet still holds money: pay it out before the transfer",
         "transfer_withdrawals": "the previous owner has a withdrawal in progress: finish it before the transfer",
         "reason_required": "is required, up to :max characters",

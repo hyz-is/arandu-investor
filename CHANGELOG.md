@@ -8,6 +8,46 @@ the versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 A published module version is immutable: Go serves it from the proxy forever, so
 a release is corrected by another release and never by moving a tag.
 
+## [0.9.2] - 2026-11-24
+
+### Security
+
+- An invoice already paid to the previous owner of a registration was offered
+  for withdrawal to the new owner. The invoice's "paid" was read from the
+  withdrawal request among the requests of whoever asked, and arandu-wallet
+  lists a holder's own requests alone, so the new owner saw no request and the
+  invoice as `available`; asking for it overwrote the request that carried the
+  first payment's receipt. Now an invoice is recorded as `withdrawn` when its
+  withdrawal is paid (`PayInvestorWithdrawal`) and when a transfer settles the
+  previous owner's requests, an invoice that names a request the asker cannot
+  see is not offered for a new one, and a request that paid an invoice is never
+  replaced.
+- A transfer and a closing of the same investor could cross: the closing loaded
+  the owner before its transaction and deposited into a wallet the transfer had
+  just left. The investor's row is now locked, and read again, inside the
+  transaction of both, and a transfer checks the previous owner's wallet and
+  withdrawals again as its last act. Two transfers at once cannot both pass.
+- `InvestorsTransfer` (`investor.investors.transfer`) is no longer opened by the
+  admin role or by `AdminAction`: it is held by the action alone, which the
+  application grants to those it trusts with it.
+- The activity entry of a transfer is written in the transaction of the
+  transfer, so a transfer the log does not show did not happen.
+- The activity entry `payout_account.added` carried the PIX key and the bank
+  account number in its label; both are masked now.
+
+### Changed
+
+- A transfer is refused when its day is before the day the registration was
+  made or before the day of the last transfer
+  (`validation.transfer_day_before_created`, `validation.transfer_day_before_last`).
+  The history is read by the day, then by the instant, then by the identifier.
+- A refused login user and a refused document are told apart when the database
+  refuses a write at the unique index.
+- The open withdrawals of the previous owner are looked for by status, so a
+  holder with many paid requests cannot hide an open one.
+- The README says arandu-wallet, arandu-activitylog and this package have to be
+  wired over the one `*data.DB` for the atomicity above to hold.
+
 ## [0.9.1] - 2026-11-24
 
 ### Fixed

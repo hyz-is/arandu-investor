@@ -21,11 +21,17 @@ import (
 type InvoiceView struct {
 	Invoice    Invoice
 	Withdrawal *wallet.WithdrawalRequest
+	// unresolved says the invoice names a request that the one asking cannot
+	// see: it was made by another holder, as when the registration passed to
+	// another person. An invoice in that state is never offered for a new
+	// request, because the old one may be the one that paid it.
+	unresolved bool
 }
 
-// Withdrawn reports whether the invoice was paid out.
+// Withdrawn reports whether the invoice was paid out: its own status says so,
+// or its request, as arandu-wallet knows it, was paid.
 func (v InvoiceView) Withdrawn() bool {
-	return v.Withdrawal != nil && v.Withdrawal.Status == wallet.WithdrawalPaid
+	return v.Invoice.Status == InvoiceWithdrawn || (v.Withdrawal != nil && v.Withdrawal.Status == wallet.WithdrawalPaid)
 }
 
 // Pending reports whether a request for it is waiting for an operator.
@@ -35,7 +41,7 @@ func (v InvoiceView) Pending() bool { return v.Withdrawal != nil && v.Withdrawal
 func (v InvoiceView) Withdrawable() bool {
 	return v.Invoice.Amount > 0 &&
 		(v.Invoice.Status == InvoiceAvailable || v.Invoice.Status == InvoiceOverdue) &&
-		!v.Withdrawn() && !v.Pending()
+		!v.Withdrawn() && !v.Pending() && !v.unresolved
 }
 
 // ErrNotWithdrawable is an invoice that cannot be asked for: nothing due,
@@ -76,6 +82,11 @@ func (s *InvestorService) WithdrawInvoice(ctx context.Context, actor security.Su
 	}
 	if !view.Withdrawable() {
 		return nil, fmt.Errorf("%w: status %s, amount %d", ErrNotWithdrawable, invoice.Status, invoice.Amount)
+	}
+	// A request that paid the invoice is never replaced by a new one, whatever
+	// the view says: the receipt it carries is the only proof of the payment.
+	if invoice.Status == InvoiceWithdrawn {
+		return nil, fmt.Errorf("%w: already withdrawn", ErrNotWithdrawable)
 	}
 	w, err := s.wallets.FindBySlug(ctx, actor, owner.UserID, WalletSlug)
 	if err != nil {
@@ -147,18 +158,39 @@ func (s *InvestorService) viewOf(ctx context.Context, actor security.Subject, in
 	if inv.WithdrawalRequestID == "" {
 		return v, nil
 	}
+	if inv.Status == InvoiceWithdrawn {
+		// Paid and recorded as paid: nothing the wallet says changes that.
+		if r, err := s.requestOf(ctx, actor, inv.WithdrawalRequestID); err == nil {
+			v.Withdrawal = r
+		}
+		return v, nil
+	}
+	v.unresolved = true
+	r, err := s.requestOf(ctx, actor, inv.WithdrawalRequestID)
+	if err != nil {
+		return nil, err
+	}
+	if r != nil {
+		v.Withdrawal, v.unresolved = r, false
+		if r.Status == wallet.WithdrawalPaid {
+			v.Invoice.Status = InvoiceWithdrawn
+		}
+	}
+	return v, nil
+}
+
+// requestOf finds one withdrawal request among the ones the actor may list,
+// nil when it is not there. arandu-wallet lists a holder's own requests and an
+// operator's everybody's, so a request that is not found is another holder's.
+func (s *InvestorService) requestOf(ctx context.Context, actor security.Subject, requestID string) (*wallet.WithdrawalRequest, error) {
 	requests, err := s.wallets.WithdrawalRequestsOf(ctx, actor, wallet.WithdrawalFilter{Limit: 200})
 	if err != nil {
 		return nil, err
 	}
 	for _, r := range requests {
-		if r.ID == inv.WithdrawalRequestID {
-			v.Withdrawal = r
-			if r.Status == wallet.WithdrawalPaid {
-				v.Invoice.Status = InvoiceWithdrawn
-			}
-			break
+		if r.ID == requestID {
+			return r, nil
 		}
 	}
-	return v, nil
+	return nil, nil
 }

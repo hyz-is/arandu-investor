@@ -48,6 +48,11 @@ var everyAction = []security.Action{
 // manageActions are the ones only the admin takes.
 var manageActions = []security.Action{investor.InvestorsManage, investor.InvestorsTransfer, investor.EntriesManage, investor.CostsManage}
 
+// adminActions are the ones the admin role opens: every one but the transfer,
+// which only the action itself opens.
+var adminActions = []security.Action{investor.InvestorsManage, investor.EntriesManage, investor.CostsManage,
+	investor.DashboardView, investor.ContractView, investor.ReportsView}
+
 // readActions are the ones an investor takes about their own row.
 var readActions = []security.Action{investor.DashboardView, investor.ContractView, investor.ReportsView}
 
@@ -121,7 +126,7 @@ func TestAGrantToReadAStatementOrAContractOnlyReads(t *testing.T) {
 		}
 	}
 	for _, action := range append([]security.Action{investor.ReportsView}, manageActions...) {
-		g, err := security.Authorize(context.Background(), investor.InvestorPolicy{}, finance(), action, mine)
+		g, err := security.Authorize(context.Background(), investor.InvestorPolicy{}, transferrer(), action, mine)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -131,10 +136,46 @@ func TestAGrantToReadAStatementOrAContractOnlyReads(t *testing.T) {
 	}
 }
 
+// transferrer is the admin the application also trusted with passing an
+// investor to another person.
+func transferrer() security.Subject {
+	s := finance()
+	s.Actions = []security.Action{investor.InvestorsTransfer}
+	return s
+}
+
+// The transfer changes whose money a registration is, so the admin role does
+// not carry it: the action does, held on its own by an account the application
+// chose, and held without the role it opens the transfer and nothing else.
+func TestTheAdminRoleDoesNotOpenTheTransfer(t *testing.T) {
+	t.Parallel()
+
+	for _, record := range []investor.Investor{{}, row("inv-1", "acme", "user-1")} {
+		if _, err := security.Authorize(context.Background(), investor.InvestorPolicy{}, finance(), investor.InvestorsTransfer, record); !errors.Is(err, security.ErrForbidden) {
+			t.Errorf("the admin role opened the transfer: %v", err)
+		}
+		withAdminAction := finance()
+		withAdminAction.Actions = []security.Action{investor.AdminAction}
+		if _, err := security.Authorize(context.Background(), investor.InvestorPolicy{}, withAdminAction, investor.InvestorsTransfer, record); !errors.Is(err, security.ErrForbidden) {
+			t.Errorf("the admin action opened the transfer: %v", err)
+		}
+		if _, err := security.Authorize(context.Background(), investor.InvestorPolicy{}, transferrer(), investor.InvestorsTransfer, record); err != nil {
+			t.Errorf("the action did not open the transfer: %v", err)
+		}
+	}
+	other := security.Subject{ID: "user-5", Tenant: "acme", Verified: true, Actions: []security.Action{investor.InvestorsTransfer}}
+	if _, err := security.Authorize(context.Background(), investor.InvestorPolicy{}, other, investor.InvestorsManage, investor.Investor{}); !errors.Is(err, security.ErrForbidden) {
+		t.Errorf("the transfer action opened another action: %v", err)
+	}
+	if _, err := security.Authorize(context.Background(), investor.InvestorPolicy{}, transferrer(), investor.InvestorsTransfer, row("inv-1", "globex", "user-1")); !errors.Is(err, security.ErrForbidden) {
+		t.Errorf("the transfer was allowed on another tenant's investor: %v", err)
+	}
+}
+
 func TestTheAdminActsAcrossItsTenantAndNoFurther(t *testing.T) {
 	t.Parallel()
 
-	for _, action := range everyAction {
+	for _, action := range adminActions {
 		if _, err := security.Authorize(context.Background(), investor.InvestorPolicy{}, finance(), action, investor.Investor{}); err != nil {
 			t.Errorf("the admin was refused %s: %v", action, err)
 		}
