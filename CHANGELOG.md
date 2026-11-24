@@ -8,6 +8,15 @@ the versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 A published module version is immutable: Go serves it from the proxy forever, so
 a release is corrected by another release and never by moving a tag.
 
+## [0.9.1] - 2026-11-24
+
+### Fixed
+
+- `investor_transfers`, created by 0.9.0, kept its date-time columns in whole
+  seconds on PostgreSQL, as the module's other tables did before they were
+  widened. The migration `20261124_0002_widen_investor_transfers_time_precision`
+  raises them to microseconds; run `aru migrate`. Nothing else changes.
+
 ## [0.9.0] - 2026-11-24
 
 ### Added

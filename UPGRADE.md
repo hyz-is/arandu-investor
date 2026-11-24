@@ -1,5 +1,13 @@
 # Upgrade Guide
 
+## v0.9.1
+
+Run `aru migrate`: one migration widens the date-time columns of
+`investor_transfers` to microseconds. No code change, no address, table or
+exported function changes. An application that lists the tables whose precision
+a test checks (`TestEveryOwnTableIsWidened` in Peráta) needs nothing for it: the
+module widens its own.
+
 ## v0.9.0
 
 Run `aru migrate`: one migration creates `investor_transfers`. Nothing is

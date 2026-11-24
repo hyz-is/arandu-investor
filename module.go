@@ -1326,6 +1326,7 @@ func (m *Module) Migrations() []foundation.Migration {
 		createInvoices{}, createInvoiceEntries{},
 		widenInvestorTimePrecision,
 		createInvestorTransfers{},
+		widenInvestorTransfersTimePrecision,
 	}
 }
 
@@ -1653,6 +1654,14 @@ func (createInvoiceEntries) Up(ctx context.Context, conn migrations.Connection) 
 // Down drops the table.
 func (createInvoiceEntries) Down(ctx context.Context, conn migrations.Connection) error {
 	return conn.Schema().DropIfExists(ctx, invoiceEntriesTable)
+}
+
+// widenInvestorTransfersTimePrecision raises the date-time columns of
+// investor_transfers to microseconds, as widenInvestorTimePrecision does for the
+// tables created before it, where the framework default made them whole seconds.
+var widenInvestorTransfersTimePrecision = migrations.WidenTimePrecision{
+	Name:   "20261124_0002_widen_investor_transfers_time_precision",
+	Tables: []string{investorTransfersTable},
 }
 
 var _ migrations.ReversibleMigration = createInvestorTransfers{}
