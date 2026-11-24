@@ -95,6 +95,7 @@ func New(cfg Config, db *data.DB, sessions *security.SessionStore) (*Module, err
 	svc.wallets = cfg.Wallet
 	svc.payer = cfg.Payer
 	svc.activity = cfg.Activity
+	svc.onWithdrawal = cfg.OnWithdrawalRequested
 	m := &Module{
 		cfg:      cfg,
 		svc:      svc,

@@ -64,7 +64,9 @@ type InvestorService struct {
 	// activity is arandu-activitylog's logger, Config.Activity; nil records
 	// nothing. describe turns an event into the sentence the entry carries.
 	activity *activitylog.Logger
-	describe func(event string) string
+	// onWithdrawal is Config.OnWithdrawalRequested.
+	onWithdrawal func(ctx context.Context, notice WithdrawalNotice)
+	describe     func(event string) string
 	// labels are the sentences a report is written in for a request: the
 	// module's, in Config.Locale or the request's language. A service built
 	// without the module writes them in the request's language from the

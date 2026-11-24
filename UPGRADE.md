@@ -1,5 +1,15 @@
 # Upgrade Guide
 
+## v0.6.3
+
+Nothing to change. `Config.OnWithdrawalRequested` is new and optional: set it to
+be told of each withdrawal an investor asks for.
+
+## v0.6.2
+
+Nothing to change. A contract amended to start earlier now closes from its
+earliest start.
+
 ## v0.5.0
 
 The published views are drawn with the Kyse `v0.45.0` data table, so this

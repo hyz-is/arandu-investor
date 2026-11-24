@@ -234,3 +234,55 @@ func TestAPageNeverWritesItsTokenOut(t *testing.T) {
 		t.Fatal("the page logs its token")
 	}
 }
+
+// The application is told of a withdrawal the moment it is asked for, once for
+// each request, with who, how much and which period, and nothing of the account
+// it is to be paid into.
+func TestAWithdrawalAskedForIsToldToTheApplicationOnce(t *testing.T) {
+	t.Parallel()
+	var mu sync.Mutex
+	var told []investor.WithdrawalNotice
+	w := installWith(t, func(_ context.Context, n investor.WithdrawalNotice) {
+		mu.Lock()
+		defer mu.Unlock()
+		told = append(told, n)
+	})
+	ctx := context.Background()
+	ana := registerPerson(t, w, "user-ana", cpfAna)
+	c := contractOver(t, w, ana, 1500)
+	record(t, w, "sale-1", investor.KindSale, "loccrm", "2026-10-05", 1000000, 0)
+	invoice, err := w.svc.Close(ctx, admin(), c.ID, "2026-10-20")
+	if err != nil {
+		t.Fatal(err)
+	}
+	account, err := w.svc.AddBankAccount(ctx, user("user-ana"), investor.BankAccountRequest{
+		Bank: "341 Itaú", Branch: "0001", Number: "12345-6", Type: "checking",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(told) != 0 {
+		t.Fatalf("nothing was asked yet: %+v", told)
+	}
+	view, err := w.svc.WithdrawInvoice(ctx, user("user-ana"), invoice.ID, account.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Asking again for the same invoice is refused and tells nobody.
+	if _, err := w.svc.WithdrawInvoice(ctx, user("user-ana"), invoice.ID, account.ID); !errors.Is(err, investor.ErrNotWithdrawable) {
+		t.Fatalf("a second request for the same invoice: %v", err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(told) != 1 {
+		t.Fatalf("one notice for one request: %+v", told)
+	}
+	n := told[0]
+	if n.InvoiceID != invoice.ID || n.RequestID != view.Withdrawal.ID || n.InvestorID != ana.ID || n.UserID != "user-ana" ||
+		n.InvestorName != ana.DisplayName() || n.Amount != invoice.Amount || n.PeriodStart != invoice.PeriodStart || n.PeriodEnd != invoice.PeriodEnd {
+		t.Fatalf("the notice says who, how much and which period: %+v", n)
+	}
+	if strings.Contains(strings.ToLower(n.InvestorName+n.InvoiceID+n.RequestID), "12345") {
+		t.Fatalf("the notice carries the account: %+v", n)
+	}
+}

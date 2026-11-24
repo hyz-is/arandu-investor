@@ -1,6 +1,7 @@
 package investor
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strings"
@@ -136,6 +137,28 @@ type Config struct {
 	// Grant it was authorized with, in the log named ActivityLogName. Nil
 	// records nothing.
 	Activity *activitylog.Logger
+
+	// OnWithdrawalRequested is called once for each withdrawal an investor (or
+	// the admin on their behalf) asks for, after the request is made and
+	// recorded: it is how an application tells the people who pay the
+	// withdrawals that one is waiting. It runs on the request's own goroutine,
+	// so it should return quickly, and what it does cannot undo the request: a
+	// failure belongs in the application's log. The notice carries no payout
+	// account. Nil does nothing.
+	OnWithdrawalRequested func(ctx context.Context, notice WithdrawalNotice)
+}
+
+// WithdrawalNotice is what is told of a withdrawal just asked for: who, how
+// much, for which period. It names no bank, no key and no account number.
+type WithdrawalNotice struct {
+	InvoiceID, RequestID string
+	InvestorID, UserID   string
+	// InvestorName is the investor's display name.
+	InvestorName string
+	// Amount is in centavos; PeriodStart and PeriodEnd are the invoice's period,
+	// the end day belonging to the next.
+	Amount                 int64
+	PeriodStart, PeriodEnd Day
 }
 
 // ChromeRequest is what Config.Chrome is asked about one screen.

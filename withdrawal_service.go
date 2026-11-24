@@ -104,6 +104,13 @@ func (s *InvestorService) WithdrawInvoice(ctx context.Context, actor security.Su
 	}); err != nil {
 		return nil, err
 	}
+	if s.onWithdrawal != nil {
+		s.onWithdrawal(ctx, WithdrawalNotice{
+			InvoiceID: invoice.ID, RequestID: req.ID, InvestorID: owner.ID, UserID: owner.UserID,
+			InvestorName: owner.DisplayName(), Amount: invoice.Amount,
+			PeriodStart: invoice.PeriodStart, PeriodEnd: invoice.PeriodEnd,
+		})
+	}
 	return &InvoiceView{Invoice: *invoice, Withdrawal: req}, nil
 }
 

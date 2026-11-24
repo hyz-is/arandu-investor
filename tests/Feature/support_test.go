@@ -53,6 +53,13 @@ type world struct {
 // builds the module over it, with a Disk for the contracts.
 func install(t *testing.T) world {
 	t.Helper()
+	return installWith(t, nil)
+}
+
+// installWith is install with the hook an application tells the people who pay
+// the withdrawals with.
+func installWith(t *testing.T, onWithdrawal func(context.Context, investor.WithdrawalNotice)) world {
+	t.Helper()
 
 	path := filepath.Join(t.TempDir(), "investor.sqlite")
 	handle, err := sql.Open(sqliteconnector.SQLiteConnector{}.DriverName(), "file:"+path+dsn)
@@ -77,7 +84,7 @@ func install(t *testing.T) world {
 	if err != nil {
 		t.Fatalf("building arandu-activitylog: %v", err)
 	}
-	module, err := investor.New(investor.Config{Files: testDisk(t), Wallet: walletModule.Service(), Activity: activity.Logger()}, db, sessions)
+	module, err := investor.New(investor.Config{Files: testDisk(t), Wallet: walletModule.Service(), Activity: activity.Logger(), OnWithdrawalRequested: onWithdrawal}, db, sessions)
 	if err != nil {
 		t.Fatalf("building the module: %v", err)
 	}

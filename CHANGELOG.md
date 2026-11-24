@@ -8,6 +8,19 @@ the versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 A published module version is immutable: Go serves it from the proxy forever, so
 a release is corrected by another release and never by moving a tag.
 
+## [0.6.3] - 2026-11-24
+
+A maintenance release of the 0.6 line, for an application that cannot take the
+views of 0.8.0 and later yet.
+
+### Added
+
+- `Config.OnWithdrawalRequested` and `WithdrawalNotice`: a function the module
+  calls once for each withdrawal asked for, after the request is made and
+  recorded, with the investor's name, the amount and the invoice's period and no
+  payout account. It is how an application tells the people who pay the
+  withdrawals that one is waiting; nil does nothing.
+
 ## [0.6.2] - 2026-11-19
 
 ### Fixed
