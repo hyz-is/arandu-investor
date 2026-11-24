@@ -45,6 +45,16 @@ type ContractRequest struct {
 	Products    []string
 	FileName    string
 	FileType    string
+
+	// Kind is what the contract is: KindInvestment (the default when empty) or
+	// KindPartnership.
+	Kind ContractKind
+	// CarryLoss makes a period whose net is negative keep the loss and take it
+	// off the periods that follow, until it is used up. Off by default.
+	CarryLoss bool
+	// PayDay is the day of the month the partner is paid, 1 to 28, or zero to
+	// follow the day the application says.
+	PayDay int
 }
 
 // Validate reports the errors per field.
@@ -73,6 +83,12 @@ func (r ContractRequest) Validate() validation.Errors {
 	// 31st would have no closing day in February.
 	if r.BillingDay < 1 || r.BillingDay > 28 {
 		e.Add("billing_day", message("billing_day"))
+	}
+	if !r.Kind.Valid() {
+		e.Add("kind", message("contract_kind"))
+	}
+	if r.PayDay < 0 || r.PayDay > 28 {
+		e.Add("pay_day", message("pay_day"))
 	}
 	if !r.AllProducts && len(cleanProducts(r.Products)) == 0 {
 		e.Add("products", message("contract_products"))
@@ -151,7 +167,7 @@ func (s *InvestorService) CreateContract(ctx context.Context, actor security.Sub
 	if err != nil {
 		return nil, err
 	}
-	if err := s.record(ctx, g, actor, EventContractCreated, "investor_contract", contract.ID, map[string]any{"investor_id": owner.ID, "number": contract.Number, "share_bps": contract.ShareBps}); err != nil {
+	if err := s.record(ctx, g, actor, EventContractCreated, "investor_contract", contract.ID, map[string]any{"investor_id": owner.ID, "number": contract.Number, "share_bps": contract.ShareBps, "kind": string(contract.Kind)}); err != nil {
 		return nil, err
 	}
 	return contract, nil
@@ -200,7 +216,7 @@ func (s *InvestorService) AmendContract(ctx context.Context, actor security.Subj
 	if err != nil {
 		return nil, err
 	}
-	if err := s.record(ctx, g, actor, EventContractAmended, "investor_contract", contract.ID, map[string]any{"investor_id": owner.ID, "supersedes": current.ID, "version": contract.Version, "share_bps": contract.ShareBps}); err != nil {
+	if err := s.record(ctx, g, actor, EventContractAmended, "investor_contract", contract.ID, map[string]any{"investor_id": owner.ID, "supersedes": current.ID, "version": contract.Version, "share_bps": contract.ShareBps, "kind": string(contract.Kind)}); err != nil {
 		return nil, err
 	}
 	return contract, nil
@@ -251,6 +267,9 @@ func (s *InvestorService) writeContract(ctx context.Context, actor security.Subj
 	record.ShareBps = in.ShareBps
 	record.BillingDay = in.BillingDay
 	record.AllProducts = Flag(in.AllProducts)
+	record.Kind = in.Kind.Or()
+	record.CarryLoss = Flag(in.CarryLoss)
+	record.PayDay = in.PayDay
 	record.Status = ContractActive
 	record.FileKey = key
 	record.FileName = strings.TrimSpace(in.FileName)

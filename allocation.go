@@ -21,7 +21,10 @@ import (
 //     of the next month): whole when it ran the whole month, by days when it
 //     started, ended or the period cut the month;
 //   - the investor's amount is the net times their share, and nothing when the
-//     net is zero or negative -- with no loss carried into the next period.
+//     net is zero or negative -- with no loss carried into the next period,
+//     unless the contract asks to carry it (ComputeFiguresCarrying);
+//   - a product kept apart is left out of "the whole application", for the
+//     contracts and for the costs alike.
 
 // billingMonthStart is the first day of the billing month the day falls in.
 func billingMonthStart(day Day, billingDay int) Day {
@@ -149,24 +152,29 @@ func chargesInWindow(item CostItem, start, end, runEnd Day) int64 {
 }
 
 // Scope is a set of products, or the whole application.
+//
+// The whole application leaves out the separate products: a product kept apart
+// is covered by a scope that names it, and by none that says "all".
 type Scope struct {
 	All      bool
 	Products map[string]bool
+	// Separate are the products kept apart. They matter only to a scope with
+	// All set.
+	Separate map[string]bool
 }
 
 // covers reports whether the product is in the scope.
-func (s Scope) covers(product string) bool { return s.All || s.Products[product] }
+func (s Scope) covers(product string) bool {
+	return s.Products[product] || (s.All && !s.Separate[product])
+}
 
 // within reports whether every product of s is in other.
 func (s Scope) within(other Scope) bool {
-	if other.All {
-		return true
-	}
 	if s.All {
-		return false
+		return other.All
 	}
 	for p := range s.Products {
-		if !other.Products[p] {
+		if !other.covers(p) {
 			return false
 		}
 	}
@@ -221,21 +229,48 @@ type Figures struct {
 	Net          int64
 	CostRatioPPM int64
 	ShareBps     int64
-	Amount       int64
+	// CarriedIn is the loss of earlier periods taken off the net before the
+	// share, and CarriedOut the loss left after this period, to take off the
+	// next. Both are zero when the contract carries no loss.
+	CarriedIn  int64
+	CarriedOut int64
+	// Amount is the investor's part: the share of the net less the loss carried
+	// in, before any retention at source.
+	Amount int64
 }
 
 // ComputeFigures turns the contract's gross, fees and allocated costs into the
-// net and the investor's amount. A net of zero or less gives no amount.
+// net and the investor's amount. A net of zero or less gives no amount, and
+// no loss is carried into the next period.
 func ComputeFigures(gross, fees, costs, shareBps int64) Figures {
+	f := ComputeFiguresCarrying(gross, fees, costs, shareBps, 0)
+	f.CarriedOut = 0
+	return f
+}
+
+// ComputeFiguresCarrying is ComputeFigures for a contract that carries its
+// losses: carriedIn, the loss the earlier periods left, is taken off the net
+// before the share applies. What the net does not cover is carried on, and
+// a period whose own net is negative adds its loss to it.
+func ComputeFiguresCarrying(gross, fees, costs, shareBps, carriedIn int64) Figures {
 	f := Figures{Gross: gross, Fees: fees, Costs: costs, ShareBps: shareBps}
 	f.Net = gross - fees - costs
 	if gross > 0 {
 		f.CostRatioPPM = roundDiv(costs*1_000_000, gross)
 	}
-	if f.Net > 0 {
+	if carriedIn < 0 {
+		carriedIn = 0
+	}
+	f.CarriedIn = carriedIn
+	left := f.Net - carriedIn
+	if left > 0 {
 		// Floor, never round up: the centavo the division leaves stays with the
 		// application, so the sum of what is paid out never exceeds the net.
-		f.Amount = f.Net * shareBps / 10000
+		f.Amount = left * shareBps / 10000
+		return f
+	}
+	if carriedIn > 0 || f.Net < 0 {
+		f.CarriedOut = -left
 	}
 	return f
 }

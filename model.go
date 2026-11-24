@@ -60,6 +60,11 @@ type Investor struct {
 	// history and earns nothing new.
 	Status InvestorStatus `db:"status"`
 
+	// Dependents is how many dependents the investor declared, each one a
+	// deduction of the income tax base held back from a partner who is a
+	// person. It matters only to a partnership.
+	Dependents int `db:"dependents"`
+
 	// CreatedAt is when the row was written, in UTC.
 	CreatedAt time.Time `db:"created_at"`
 
@@ -114,6 +119,9 @@ const (
 	invoiceEntriesTable   = "investor_invoice_entries"
 	// investorTransfersTable is the history of who each investor was.
 	investorTransfersTable = "investor_transfers"
+	// separateProductsTable holds the products kept out of the contracts and
+	// the costs that cover the whole application.
+	separateProductsTable = "investor_separate_products"
 )
 
 // Column widths, declared once for the migrations and the validation, so a
@@ -199,6 +207,7 @@ type Resource struct {
 	legalRepresentative string
 	email               string
 	status              InvestorStatus
+	dependents          int
 	createdAt           time.Time
 }
 
@@ -214,6 +223,7 @@ func NewResource(record Investor) Resource {
 		legalRepresentative: record.LegalRepresentative,
 		email:               record.Email,
 		status:              record.Status,
+		dependents:          record.Dependents,
 		createdAt:           record.CreatedAt,
 	}
 }
@@ -237,6 +247,7 @@ func (r Resource) ToArray() map[string]any {
 		"legal_representative": r.legalRepresentative,
 		"email":                r.email,
 		"status":               string(r.status),
+		"dependents":           r.dependents,
 		"created_at":           r.createdAt.UTC().Format(time.RFC3339),
 	}
 }

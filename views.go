@@ -317,18 +317,32 @@ type ContractRow struct {
 	// Ends is the last day, or "em aberto" for a contract with none; Period
 	// is the two together, as a column draws them.
 	ID, Number, Share, Products, Status, Starts, Ends, Period string
-	Version, BillingDay                                       int
-	Active                                                    bool
-	StatementURL, ProjectionURL, FileURL                      string
-	CloseURL, AmendURL                                        string
+	// Kind is the mode of the contract in the screen's words ("Investimento",
+	// "Parceria"), KindKey its name ("investment", "partnership"), and PayDay
+	// the day of the month its partner is paid, empty when it follows the
+	// application's.
+	Kind, KindKey, PayDay string
+	Version, BillingDay   int
+	Active                bool
+	// Partnership says the contract is a partnership, and CarryLoss that it
+	// carries a losing period's loss into the next ones.
+	Partnership, CarryLoss               bool
+	StatementURL, ProjectionURL, FileURL string
+	CloseURL, AmendURL                   string
 }
 
 // InvoiceRow is one invoice as a screen shows it.
 type InvoiceRow struct {
+	// Amount is what the investor is paid; Part is their part of the net
+	// before the retention at source, Withheld what was held back of it (INSS
+	// and IRRF, each on its own) and CarriedOut the loss left for the next
+	// period. Retained says something was held back, and RPAURL is the
+	// payment receipt of that retention, empty when nothing was.
 	ID, Period, Gross, Fees, Costs, Net, Share, Amount string
+	Part, Withheld, INSS, IRRF, CarriedIn, CarriedOut  string
 	Status, StatusKey, Withdrawal, WithdrawalKey       string
-	Withdrawable                                       bool
-	WithdrawURL, ReceiptURL, RejectedReason            string
+	Withdrawable, Retained                             bool
+	WithdrawURL, ReceiptURL, RejectedReason, RPAURL    string
 }
 
 // AccountOption is one payout account a withdrawal can be paid into: its
@@ -408,6 +422,9 @@ type StatementPageData struct {
 	From, To, Kind, Product string
 	URL                     string
 	HasEstimates            bool
+	// CarriedLoss is the loss of closed periods the open one starts with, in
+	// reais, empty when there is none.
+	CarriedLoss string
 }
 
 // ProjectedCostRow is one declared cost in the open period.
@@ -421,6 +438,11 @@ type ProjectionPageData struct {
 	Costs                              []ProjectedCostRow
 	Gross, Fees, ProjectedCosts, Ratio string
 	EstimatedNet, EstimatedAmount      string
+	// CarriedIn is the loss taken off the net before the share, and
+	// EstimatedCarriedOut what would be left; EstimatedGrossPart is the part
+	// before the retention at source, and EstimatedWithheld what a partnership
+	// would hold back. Each is empty when it is nothing.
+	CarriedIn, EstimatedCarriedOut, EstimatedGrossPart, EstimatedWithheld string
 }
 
 // InvestorRow is one investor in the admin's registry.
@@ -442,13 +464,17 @@ type AdminInvestorPageData struct {
 	Screen
 	Investor                       InvestorRow
 	LegalName, LegalRepresentative string
-	Contracts                      []ContractRow
-	Invoices                       []InvoiceRow
-	ContractStoreURL               string
-	UpdateURL, SuspensionURL       string
-	ReportsURL                     string
-	Year, Month                    int
-	Today                          string
+	// Dependents is how many the person declared, and IsPerson says the
+	// investor is a person, the only kind a retention at source is held from.
+	Dependents               int
+	IsPerson                 bool
+	Contracts                []ContractRow
+	Invoices                 []InvoiceRow
+	ContractStoreURL         string
+	UpdateURL, SuspensionURL string
+	ReportsURL               string
+	Year, Month              int
+	Today                    string
 }
 
 // CostRow is one declared cost.

@@ -72,6 +72,13 @@ type Config struct {
 	// balance of its own.
 	Wallet *wallet.WalletService
 
+	// Withholder computes the retention at source of an investor who is a
+	// person, for the contracts and investors that ask for it. Nil means
+	// DefaultWithholder: the INSS of the contribuinte individual and the IRRF
+	// of the monthly table, from the tables this release carries. An
+	// application whose accountant works from other rules passes its own.
+	Withholder Withholder
+
 	// Payer is the company that pays the investors, printed on the yearly
 	// income report. Optional: left empty, the report prints a dash.
 	Payer Payer
@@ -185,6 +192,7 @@ type ChromeRequest struct {
 //	GET  Prefix + Costs
 //	POST Prefix + Invoices + /{id} + Withdrawal      ask for an invoice
 //	GET  Prefix + Invoices + /{id} + Receipt         the receipt of its payment
+//	GET  Prefix + Invoices + /{id} + RPA             the RPA of its retention at source
 //
 // and under AdminPrefix: Investors (with Suspension, Contracts, Invoices and
 // Reports below one), Contracts + /{id} + Amendments|Closings, Closings + Due,
@@ -194,7 +202,7 @@ type Paths struct {
 	Me, Contracts, Invoices, Reports, PayoutAccounts string
 	Contract                                         string
 	File, Statement, Projection, Costs               string
-	Withdrawal, Receipt                              string
+	Withdrawal, Receipt, RPA                         string
 	Admin, Investors, Suspension, Amendments         string
 	Closings, Due, Entries, Reversal, End            string
 	Withdrawals, Processing, Payment, Rejection      string
@@ -205,7 +213,7 @@ var DefaultPaths = Paths{
 	Me: "/me", Contracts: "/contracts", Invoices: "/invoices", Reports: "/reports", PayoutAccounts: "/payout-accounts",
 	Contract: "/contract",
 	File:     "/file", Statement: "/statement", Projection: "/projection", Costs: "/costs",
-	Withdrawal: "/withdrawal", Receipt: "/receipt",
+	Withdrawal: "/withdrawal", Receipt: "/receipt", RPA: "/rpa",
 	Admin: "/admin", Investors: "/investors", Suspension: "/suspension", Amendments: "/amendments",
 	Closings: "/closings", Due: "/due", Entries: "/entries", Reversal: "/reversal", End: "/end",
 	Withdrawals: "/withdrawals", Processing: "/processing", Payment: "/payment", Rejection: "/rejection",
@@ -219,7 +227,7 @@ var PortuguesePaths = Paths{
 	Me: "/", Contracts: "/contratos", Invoices: "/faturas", Reports: "/relatorios", PayoutAccounts: "/conta-de-recebimento",
 	Contract: "/contrato",
 	File:     "/arquivo", Statement: "/extrato", Projection: "/projecao", Costs: "/custos",
-	Withdrawal: "/saque", Receipt: "/comprovante",
+	Withdrawal: "/saque", Receipt: "/comprovante", RPA: "/rpa",
 	Admin: "/admin", Investors: "/investidores", Suspension: "/suspensao", Amendments: "/aditivos",
 	Closings: "/fechamentos", Due: "/vencidos", Entries: "/lancamentos", Reversal: "/estorno", End: "/encerramento",
 	Withdrawals: "/saques", Processing: "/em-pagamento", Payment: "/pagamento", Rejection: "/recusa",
@@ -236,7 +244,7 @@ func (p *Paths) fields() []struct {
 	}{
 		{"Me", &p.Me}, {"Contracts", &p.Contracts}, {"Invoices", &p.Invoices}, {"Reports", &p.Reports},
 		{"PayoutAccounts", &p.PayoutAccounts}, {"Contract", &p.Contract}, {"File", &p.File}, {"Statement", &p.Statement},
-		{"Projection", &p.Projection}, {"Costs", &p.Costs}, {"Withdrawal", &p.Withdrawal}, {"Receipt", &p.Receipt},
+		{"Projection", &p.Projection}, {"Costs", &p.Costs}, {"Withdrawal", &p.Withdrawal}, {"Receipt", &p.Receipt}, {"RPA", &p.RPA},
 		{"Admin", &p.Admin}, {"Investors", &p.Investors}, {"Suspension", &p.Suspension},
 		{"Amendments", &p.Amendments}, {"Closings", &p.Closings}, {"Due", &p.Due}, {"Entries", &p.Entries},
 		{"Reversal", &p.Reversal}, {"End", &p.End}, {"Withdrawals", &p.Withdrawals},

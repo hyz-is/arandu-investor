@@ -27,6 +27,12 @@ func statusVariant(key string) string {
 }
 
 func dashboardInvoices(data WithdrawalsData) components.DataTableProps {
+	// The columns of the retention are there when some invoice held one, so
+	// the table of an investment reads as it always did.
+	retained := false
+	for _, i := range data.Invoices {
+		retained = retained || i.Retained
+	}
 	rows := make([]components.TableRow, 0, len(data.Invoices))
 	for _, i := range data.Invoices {
 		withdrawal := template.HTML("")
@@ -36,22 +42,48 @@ func dashboardInvoices(data WithdrawalsData) components.DataTableProps {
 		if i.ReceiptURL != "" {
 			withdrawal += " " + components.Link(components.LinkProps{Label: data.Labels.T("control.view_receipt"), URL: i.ReceiptURL, Variant: "hover"})
 		}
+		if i.RPAURL != "" {
+			withdrawal += " " + components.Link(components.LinkProps{Label: data.Labels.T("field.rpa"), URL: i.RPAURL, Variant: "hover"})
+		}
 		facets := map[string]string{"status": i.Status}
 		if i.Withdrawal != "" {
 			facets["withdrawal"] = i.Withdrawal
 		}
-		rows = append(rows, components.TableRow{Key: i.ID, Facets: facets, Cells: []components.TableCell{
+		cells := []components.TableCell{
 			{Text: i.Period},
 			{Text: i.Gross},
 			{Text: i.Fees},
 			{Text: i.Costs},
 			{Text: i.Net},
 			{Text: i.Share},
-			{Text: i.Amount},
-			{HTML: components.Badge(components.BadgeProps{Label: i.Status, Variant: statusVariant(i.StatusKey)})},
-			{HTML: withdrawal},
-		}})
+		}
+		if retained {
+			cells = append(cells, components.TableCell{Text: i.Part}, components.TableCell{Text: i.INSS}, components.TableCell{Text: i.IRRF})
+		}
+		cells = append(cells,
+			components.TableCell{Text: i.Amount},
+			components.TableCell{HTML: components.Badge(components.BadgeProps{Label: i.Status, Variant: statusVariant(i.StatusKey)})},
+			components.TableCell{HTML: withdrawal})
+		rows = append(rows, components.TableRow{Key: i.ID, Facets: facets, Cells: cells})
 	}
+	columns := []components.TableColumn{
+		{Label: data.Labels.T("field.period"), Key: "period"},
+		{Label: data.Labels.T("field.gross"), Key: "gross", Hideable: true, Align: "end"},
+		{Label: data.Labels.T("field.fees"), Key: "fees", Hideable: true, Align: "end"},
+		{Label: data.Labels.T("field.costs"), Key: "costs", Hideable: true, Align: "end"},
+		{Label: data.Labels.T("field.net"), Key: "net", Align: "end"},
+		{Label: data.Labels.T("field.share"), Key: "share", Hideable: true},
+	}
+	if retained {
+		columns = append(columns,
+			components.TableColumn{Label: data.Labels.T("report.part"), Key: "part", Hideable: true, Align: "end"},
+			components.TableColumn{Label: data.Labels.T("report.withheld_inss"), Key: "inss", Hideable: true, Align: "end"},
+			components.TableColumn{Label: data.Labels.T("report.withheld_irrf"), Key: "irrf", Hideable: true, Align: "end"})
+	}
+	columns = append(columns,
+		components.TableColumn{Label: data.Labels.T("field.amount"), Key: "amount", Align: "end"},
+		components.TableColumn{Label: data.Labels.T("field.status"), Key: "status", Hideable: true},
+		components.TableColumn{Label: data.Labels.T("field.withdrawal"), Key: "withdrawal", Hideable: true})
 	return components.DataTableProps{
 		ID: "investor-invoices", Label: data.Labels.T("screen.invoices_title"), URL: data.Path,
 		ColumnsLabel: data.Labels.T("control.columns"), Lines: data.TableLines(), Complete: true, PageSize: 12,
@@ -59,17 +91,7 @@ func dashboardInvoices(data WithdrawalsData) components.DataTableProps {
 		Filters: investor.CompleteFilters(rows,
 			components.DataTableFilter{Key: "status", Label: data.Labels.T("field.status")},
 			components.DataTableFilter{Key: "withdrawal", Label: data.Labels.T("field.withdrawal")}),
-		Columns: []components.TableColumn{
-			{Label: data.Labels.T("field.period"), Key: "period"},
-			{Label: data.Labels.T("field.gross"), Key: "gross", Hideable: true, Align: "end"},
-			{Label: data.Labels.T("field.fees"), Key: "fees", Hideable: true, Align: "end"},
-			{Label: data.Labels.T("field.costs"), Key: "costs", Hideable: true, Align: "end"},
-			{Label: data.Labels.T("field.net"), Key: "net", Align: "end"},
-			{Label: data.Labels.T("field.share"), Key: "share", Hideable: true},
-			{Label: data.Labels.T("field.amount"), Key: "amount", Align: "end"},
-			{Label: data.Labels.T("field.status"), Key: "status", Hideable: true},
-			{Label: data.Labels.T("field.withdrawal"), Key: "withdrawal", Hideable: true},
-		},
+		Columns: columns,
 		Rows:  rows,
 		Empty: components.EmptyProps{Title: data.Labels.T("screen.invoices_empty")},
 	}

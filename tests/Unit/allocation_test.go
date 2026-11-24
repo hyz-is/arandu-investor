@@ -176,3 +176,67 @@ func TestEveryLineCarriesItsShareOfTheCostsAndTheyAddUp(t *testing.T) {
 		t.Fatalf("a refund or a pure fee carried part of the costs: %d, %d", uneven[3].Cost, uneven[4].Cost)
 	}
 }
+
+// A contract that carries its losses takes the loss off the net before the
+// share, until it is used up.
+func TestALossIsCarriedAndTakenOffTheNextNets(t *testing.T) {
+	t.Parallel()
+
+	// R$ 5.000 of revenue against R$ 6.000 of costs: a loss of R$ 1.000.
+	one := investor.ComputeFiguresCarrying(500000, 0, 600000, 1500, 0)
+	if one.Net != -100000 || one.Amount != 0 || one.CarriedIn != 0 || one.CarriedOut != 100000 {
+		t.Fatalf("the losing period: net %d amount %d in %d out %d", one.Net, one.Amount, one.CarriedIn, one.CarriedOut)
+	}
+	// A net of R$ 500 makes up half of it and pays nothing.
+	two := investor.ComputeFiguresCarrying(650000, 0, 600000, 1500, one.CarriedOut)
+	if two.Net != 50000 || two.Amount != 0 || two.CarriedIn != 100000 || two.CarriedOut != 50000 {
+		t.Fatalf("the second period: net %d amount %d in %d out %d", two.Net, two.Amount, two.CarriedIn, two.CarriedOut)
+	}
+	// A net of R$ 4.000 makes up the rest, and the share is over what is left.
+	three := investor.ComputeFiguresCarrying(1000000, 0, 600000, 1500, two.CarriedOut)
+	if three.Net != 400000 || three.Amount != 52500 || three.CarriedOut != 0 {
+		t.Fatalf("the third period: net %d amount %d out %d; want 400000, 52500 (15%% of 350000) and 0", three.Net, three.Amount, three.CarriedOut)
+	}
+}
+
+// Without a loss to carry, the figures are what they always were.
+func TestNoLossToCarryLeavesTheFiguresAlone(t *testing.T) {
+	t.Parallel()
+
+	plain := investor.ComputeFigures(3000000, 30000, 600000, 1500)
+	carrying := investor.ComputeFiguresCarrying(3000000, 30000, 600000, 1500, 0)
+	if plain != carrying || plain.Amount != 355500 || plain.CarriedOut != 0 {
+		t.Fatalf("plain %+v, carrying %+v", plain, carrying)
+	}
+	// ComputeFigures never carries: a losing period leaves nothing behind.
+	if lost := investor.ComputeFigures(500000, 0, 600000, 1500); lost.CarriedOut != 0 || lost.Amount != 0 {
+		t.Fatalf("a losing period without the option carried %d", lost.CarriedOut)
+	}
+}
+
+// A product kept apart is left out of "the whole application", for the
+// contract and for the cost alike, and covered again by a scope that names it.
+func TestASeparateProductIsLeftOutOfTheWholeApplication(t *testing.T) {
+	t.Parallel()
+
+	revenue := map[string]int64{"loccrm": 2000000, "corujao": 1000000}
+	separate := map[string]bool{"corujao": true}
+	shared := investor.ScopedCost{Amount: 600000, Scope: investor.Scope{All: true, Separate: separate}}
+	own := investor.ScopedCost{Amount: 300000, Scope: investor.Scope{Products: map[string]bool{"corujao": true}}}
+	costs := []investor.ScopedCost{shared, own}
+
+	everything := investor.Scope{All: true, Separate: separate}
+	if got := investor.AllocateCosts(costs, revenue, everything); got != 600000 {
+		t.Fatalf("the whole application bears %d, want the shared cost whole and nothing of the other line's", got)
+	}
+	corujao := investor.Scope{Products: map[string]bool{"corujao": true}}
+	if got := investor.AllocateCosts(costs, revenue, corujao); got != 300000 {
+		t.Fatalf("the separate line bears %d, want only its own cost", got)
+	}
+
+	// With nothing kept apart, as before: the shared cost is over all revenue.
+	plain := []investor.ScopedCost{{Amount: 600000, Scope: investor.Scope{All: true}}}
+	if got := investor.AllocateCosts(plain, revenue, investor.Scope{Products: map[string]bool{"loccrm": true}}); got != 400000 {
+		t.Fatalf("a product of the whole application bears %d, want two thirds (400000)", got)
+	}
+}

@@ -89,7 +89,13 @@
         "holder_name": "Holder",
         "holder_document": "Holder's document",
         "request_id": "Withdrawal request",
-        "receipt_name": "Receipt file name"
+        "receipt_name": "Receipt file name",
+        "dependents": "Dependents",
+        "pay_day": "Pay day",
+        "carry_loss": "Carry losses forward",
+        "contract_kind": "Type",
+        "rpa": "RPA",
+        "part": "Part"
     },
     "screen": {
         "dashboard_title": "Investor dashboard",
@@ -177,7 +183,15 @@
         "next_payout_note": "the day the team pays the closed period",
         "in_payment_note": "asked for, waiting for the team to pay",
         "withdraw_now": "Withdraw",
-        "see_withdrawals": "Withdrawals"
+        "see_withdrawals": "Withdrawals",
+        "carried_loss": "Loss carried from earlier periods",
+        "carried_loss_note": "The open period starts with a loss to make up: it is taken off the net before your share is applied.",
+        "estimated_part": "Your estimated part, before the retention",
+        "estimated_withheld": "Retention at source (INSS and IRRF)",
+        "estimated_carried_out": "Loss that would be carried on",
+        "carry_loss_hint": "A period whose net is negative keeps the loss and takes it off the next ones.",
+        "pay_day_hint": "Empty follows the application’s day.",
+        "kind_hint": "A partnership holds INSS and IRRF back from a partner who is a person; an investment holds nothing."
     },
     "control": {
         "search_label": "Search :label",
@@ -311,7 +325,9 @@
         "withdrawal_requested": "Withdrawal requested by the investor",
         "withdrawal_processing": "Withdrawal payment started",
         "withdrawal_paid": "Withdrawal marked paid, with receipt",
-        "withdrawal_rejected": "Withdrawal rejected"
+        "withdrawal_rejected": "Withdrawal rejected",
+        "product_separated": "Product kept apart from the whole application",
+        "product_joined": "Product brought back into the whole application"
     },
     "validation": {
         "summary": ":field :message",
@@ -369,7 +385,10 @@
         "transfer_funds": "the previous owner's wallet still holds money: pay it out before the transfer",
         "transfer_withdrawals": "the previous owner has a withdrawal in progress: finish it before the transfer",
         "reason_required": "is required, up to :max characters",
-        "account_details": "describe the account: a PIX key, a bank account, an address"
+        "account_details": "describe the account: a PIX key, a bank account, an address",
+        "dependents_range": "must be a number from 0 to :max",
+        "contract_kind": "must be an investment or a partnership",
+        "pay_day": "must be a day from 1 to 28, or empty"
     },
     "report": {
         "summary_sheet": "Summary",
@@ -393,7 +412,14 @@
         "withheld": "Tax withheld",
         "total": "Total",
         "share_note": "The amounts are the angel investor's share of the results, credited by the invoice of each closed period.",
-        "tax_note": "No tax was withheld at source by this system. How it is declared is for the beneficiary's accountant to decide."
+        "tax_note": "No tax was withheld at source by this system. How it is declared is for the beneficiary's accountant to decide.",
+        "part": "Part before retention",
+        "withheld_inss": "INSS withheld",
+        "withheld_irrf": "IRRF withheld",
+        "paid": "Paid",
+        "carried_in": "Loss carried in",
+        "carried_out": "Loss carried out",
+        "tax_note_withheld": "The INSS and the IRRF were withheld at source by the payer, by the month the amount was credited, from the partner's part. The beneficiary's accountant decides how they are declared."
     },
     "month": {
         "1": "January",
@@ -416,5 +442,25 @@
         "reports": "Reports",
         "menu": "Sections of the investor area",
         "menu_label": "Sections"
+    },
+    "contract_kind": {
+        "investment": "Investment",
+        "partnership": "Partnership"
+    },
+    "rpa": {
+        "sheet": "RPA",
+        "title": "Receipt of payment to an autonomous worker (RPA) — :month :year",
+        "file": "rpa-:period.xlsx",
+        "service": "Service",
+        "calculation": "Calculation",
+        "base": "Base",
+        "rate": "Rate",
+        "amount": "Amount",
+        "irrf_reduction": "IRRF reduction (Lei 15.270/2025)",
+        "total_withheld": "Total withheld",
+        "table_note": "Rates and tables used: :table.",
+        "month_note": "The income tax is computed over every payment of the month to the same beneficiary: its base is the month's, and this payment holds the difference.",
+        "employer_note": "The employer contribution is the payer's cost and is not discounted from the beneficiary.",
+        "review_note": "Figures to be confirmed by the payer's accountant before they are recorded or paid."
     }
 }

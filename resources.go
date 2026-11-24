@@ -48,6 +48,8 @@ func (r statementResource) ToArray() map[string]any {
 		"totals": map[string]any{
 			"gross": r.s.Gross, "fees": r.s.Fees, "costs": r.s.Costs, "net": r.s.Net,
 		},
+		"kind":         string(r.s.Contract.Kind.Or()),
+		"carried_loss": r.s.CarriedLoss,
 	}
 }
 func (r statementResource) With() map[string]any { return nil }
@@ -77,6 +79,11 @@ func (r projectionResource) ToArray() map[string]any {
 		"projected_costs":          r.p.ProjectedCosts,
 		"estimated_net":            r.p.EstimatedNet,
 		"estimated_amount":         r.p.EstimatedAmount,
+		"estimated_part_gross":     r.p.EstimatedGrossPart,
+		"estimated_withheld":       r.p.EstimatedWithheld,
+		"carried_in":               r.p.CarriedIn,
+		"estimated_carried_out":    r.p.EstimatedCarriedOut,
+		"kind":                     string(r.p.Contract.Kind.Or()),
 		"estimated_cost_ratio_ppm": r.p.EstimatedCostRatioPPM,
 	}
 }
@@ -116,6 +123,11 @@ func invoiceFields(i *Invoice) map[string]any {
 		"cost_ratio_ppm": i.CostRatioPPM,
 		"share_bps":      i.ShareBps,
 		"amount":         i.Amount,
+		"part_gross":     i.GrossPart(),
+		"carried_in":     i.CarriedIn,
+		"carried_out":    i.CarriedOut,
+		"withheld_inss":  i.INSSAmount,
+		"withheld_irrf":  i.IRRFAmount,
 		"status":         string(i.Status),
 		"closed_at":      i.ClosedAt.UTC().Format(time.RFC3339),
 	}

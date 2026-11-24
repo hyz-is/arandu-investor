@@ -184,6 +184,7 @@ var everyRoute = []struct {
 	{http.MethodPost, investor.DefaultPrefix + "/admin/withdrawals/record-1/payment", multipartReceipt, false},
 	{http.MethodPost, investor.DefaultPrefix + "/admin/withdrawals/record-1/rejection", "reason=dados+divergentes", false},
 	{http.MethodGet, investor.DefaultPrefix + "/invoices/record-1/receipt", "", true},
+	{http.MethodGet, investor.DefaultPrefix + "/invoices/record-1/rpa", "", true},
 	{http.MethodPost, investor.DefaultPrefix + "/me/payout-accounts", "pix_key_type=email&pix_key=ana%40example.com", true},
 }
 
@@ -306,6 +307,7 @@ func TestTheModuleRegistersItsRoutesUnderItsPrefix(t *testing.T) {
 		"GET /widgets/contracts/{id}/statement",
 		"GET /widgets/costs",
 		"GET /widgets/invoices/{id}/receipt",
+		"GET /widgets/invoices/{id}/rpa",
 		"GET /widgets/me",
 		"GET /widgets/me/contract",
 		"GET /widgets/me/contracts",

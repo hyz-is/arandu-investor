@@ -66,6 +66,9 @@ type InvestorService struct {
 	wallets *wallet.WalletService
 	// payer is who pays the investors, printed on the income report.
 	payer Payer
+	// withholder computes the retention at source, Config.Withholder; nil
+	// means DefaultWithholder.
+	withholder Withholder
 	// activity is arandu-activitylog's logger, Config.Activity; nil records
 	// nothing. describe turns an event into the sentence the entry carries.
 	activity *activitylog.Logger
@@ -119,11 +122,21 @@ type CreateRequest struct {
 	LegalRepresentative string
 	// Email is where the investor is reached.
 	Email string
+	// Dependents is how many dependents the person declared, each one a
+	// deduction of the income tax held back from a partnership. Zero by
+	// default; it matters to a partner who is a person and to nobody else.
+	Dependents int
 }
+
+// maxDependents is the most dependents a person may declare.
+const maxDependents = 30
 
 // Validate reports the errors per field.
 func (r CreateRequest) Validate() validation.Errors {
 	e := validation.Errors{}
+	if r.Dependents < 0 || r.Dependents > maxDependents {
+		e.Add("dependents", message("dependents_range", translation.Replace{"max": maxDependents}))
+	}
 	validation.Required(e, "user_id", r.UserID)
 	validation.MaxLen(e, "user_id", r.UserID, maxIdentifierLen)
 	validation.Required(e, "name", r.Name)
@@ -210,6 +223,9 @@ func (s *InvestorService) Create(ctx context.Context, actor security.Subject, in
 	candidate.LegalRepresentative = proposed.LegalRepresentative
 	candidate.Email = proposed.Email
 	candidate.Status = proposed.Status
+	if candidate.Kind == Person {
+		candidate.Dependents = in.Dependents
+	}
 	candidate.CreatedAt = now
 	candidate.UpdatedAt = now
 	if _, err := candidate.Save(ctx, g); err != nil {
@@ -229,6 +245,9 @@ type UpdateRequest struct {
 	LegalName           string
 	LegalRepresentative string
 	Email               string
+	// Dependents changes how many dependents the person declared; nil keeps
+	// what there is. A company has none.
+	Dependents *int
 }
 
 // Update changes the names and the e-mail of an investor.
@@ -257,6 +276,9 @@ func (s *InvestorService) Update(ctx context.Context, actor security.Subject, id
 		validation.Required(e, "legal_name", in.LegalName)
 		validation.Required(e, "legal_representative", in.LegalRepresentative)
 	}
+	if in.Dependents != nil && (*in.Dependents < 0 || *in.Dependents > maxDependents) {
+		e.Add("dependents", message("dependents_range", translation.Replace{"max": maxDependents}))
+	}
 	if e.Any() {
 		return nil, e
 	}
@@ -267,11 +289,14 @@ func (s *InvestorService) Update(ctx context.Context, actor security.Subject, id
 		record.LegalName = strings.TrimSpace(in.LegalName)
 		record.LegalRepresentative = strings.TrimSpace(in.LegalRepresentative)
 	}
+	if in.Dependents != nil && record.Kind == Person {
+		record.Dependents = *in.Dependents
+	}
 	record.UpdatedAt = s.now()
 	if _, err := record.Save(ctx, g); err != nil {
 		return nil, err
 	}
-	if err := s.record(ctx, g, actor, EventInvestorUpdated, "investor", record.ID, map[string]any{"name": record.Name, "email": record.Email}); err != nil {
+	if err := s.record(ctx, g, actor, EventInvestorUpdated, "investor", record.ID, map[string]any{"name": record.Name, "email": record.Email, "dependents": record.Dependents}); err != nil {
 		return nil, err
 	}
 	return record, nil

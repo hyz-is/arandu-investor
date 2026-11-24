@@ -1,5 +1,41 @@
 # Upgrade Guide
 
+## v0.10.0
+
+Run `aru migrate`: five migrations add columns and one table. Every existing
+contract becomes an **investment**, no existing invoice held anything back, and
+no address, table name or exported function is removed, so an application that
+changes nothing behaves as before: same figures, same amounts, same withdrawals.
+
+What an application may choose to do:
+
+- **Partnerships.** Register a contract with `Kind: investor.KindPartnership`
+  (or the `kind` field of the form) for a partner who brings work. For a
+  partner who is a person the invoice then holds the INSS and the IRRF, and
+  `Invoice.Amount` is the part less them (`Invoice.GrossPart()` is the part).
+  Read `Amount` as what is paid, as you did. Nothing is held back unless a
+  contract is a partnership, so do not change the contracts an application
+  already has.
+- **The tables.** The default withholder carries the table of 2026; pass a
+  `Withholder` in `Config.Withholder` to use another, and have an accountant
+  confirm the rules before the first real payment (see the README).
+- **Views.** `aru vendor:publish --tag=view --apply` writes the views with the
+  mode, the pay day and the retention. An application that edited its copies
+  ports the changes by hand: new fields on `ContractRow` (`Kind`, `KindKey`,
+  `PayDay`, `Partnership`, `CarryLoss`) and `InvoiceRow` (`Part`, `Withheld`,
+  `INSS`, `IRRF`, `CarriedIn`, `CarriedOut`, `Retained`, `RPAURL`), on
+  `StatementPageData` (`CarriedLoss`), `ProjectionPageData` (`CarriedIn`,
+  `EstimatedCarriedOut`, `EstimatedGrossPart`, `EstimatedWithheld`) and
+  `AdminInvestorPageData` (`Dependents`, `IsPerson`); `Screen.ContractKindOptions`
+  offers the choice.
+- **Routes.** `Paths` gained `RPA` (`/rpa`), and `investor.invoices.rpa` joins the
+  route table. An application that lists the routes in a test adds it.
+- **Messages.** The shipped catalogues gained `contract_kind.*`, `rpa.*`, the
+  `report.*` of the retention and a few `field.*`, `screen.*` and `validation.*`
+  lines; an application that overrides lines in its own translator keeps its
+  lines.
+- A test that lists the tables an application owns adds `investor_separate_products`.
+
 ## v0.9.2
 
 No migration, no new address and no removed symbol. Two things need a look.

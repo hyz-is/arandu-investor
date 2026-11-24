@@ -34,13 +34,131 @@ A contract closes on its billing day (1–28), once a month. Closing the period
    arandu-wallet, idempotently, and becomes an **invoice**.
 
 A period whose net is zero or negative closes with nothing due, and the loss is
-**not** carried into the next one. An invoice is never summed with the next:
+**not** carried into the next one, unless the contract asks for it (see
+[Carry a loss forward](#carry-a-loss-forward)). An invoice is never summed with the next:
 it is withdrawn whole, with no minimum, and becomes *overdue* once a later
 period closes while it is still unpaid. An entry that arrives late — dated in a
 period already closed — is counted in the next closing, never twice.
 
-Money is `int64` centavos, shares are basis points (1500 = 15%), and no
-income tax is withheld.
+Money is `int64` centavos and shares are basis points (1500 = 15%). An
+investment withholds no tax; a partnership with a person does (see below).
+
+## Two modes of contract
+
+A contract has a `Kind`, and it says how the person takes part:
+
+| `Kind` | who | what is paid | retention at source |
+| --- | --- | --- | --- |
+| `investment` (the default) | puts money in and receives a return | the share of the net | none |
+| `partnership` | brings work and no money and receives a share of the net | the share of the net, less the retention | INSS and IRRF, when the partner is a person |
+
+Every contract that exists is an investment, an empty `Kind` reads as one, and
+nothing changes for an application that never sets it: the migration defaults
+the column to `investment`. The screens say the mode ("Investimento",
+"Parceria").
+
+Carrying a loss forward, a pay day per contract and a separate product are
+options of **both** modes, off by default.
+
+## Partnership: the retention at source
+
+The partner is paid as an autonomous worker (contribuinte individual). The
+company that pays holds the INSS and the IRRF back from **the partner's part**
+when the invoice is created, and the invoice says how it came out:
+
+| invoice | meaning |
+| --- | --- |
+| `Amount` | what the partner is paid: the part less the retention. It is what is deposited in the wallet and what the withdrawal asks for |
+| `GrossPart()` | the part, the share of the net before the retention |
+| `INSSBase`, `INSSRateBps`, `INSSAmount` | the contribution and what it was over |
+| `IRRFBase`, `IRRFRateBps`, `IRRFReduction`, `IRRFAmount` | the income tax, the month's base, the bracket's rate, the reduction of Lei 15.270/2025 and what this payment holds |
+| `WithholdingTable`, `WithholdingMonth` | the table of rates used and the calendar month the tax is over |
+
+The retention is a discount on the part. It is never a cost of the base: the
+net, the costs and the other investors' figures do not move by it. Only a
+partnership with an investor who is a **person** holds anything back; a
+partner that is a company is paid the whole part. An investor's dependents
+(`CreateRequest.Dependents`, `UpdateRequest.Dependents`) each deduct from the
+income tax base.
+
+How it is computed, with the figures of 2026:
+
+- **INSS** is 11% of what is paid in the month, up to the ceiling of the
+  salary of contribution, R$ 8.475,55. Payments of the same month to the same
+  partner count together toward the ceiling: the month's contribution is rounded
+  once and each payment holds the difference.
+- **IRRF** follows the monthly table over the month's income less the larger
+  of the legal deductions (the INSS and R$ 189,59 per dependent) and the
+  simplified discount of R$ 607,20, then the reduction of Lei 15.270/2025 (up
+  to R$ 312,89 on income up to R$ 5.000,00, and R$ 978,62 less 0,133145 of the
+  income up to R$ 7.350,00). Like the INSS, it is computed over the month's
+  payments together, and a payment holds the difference.
+- Amounts are rounded half away from zero to the centavo, once per figure.
+
+The sources, which the tables in `withholding.go` repeat:
+
+- Teto do salário de contribuição, R$ 8.475,55: Portaria Interministerial
+  MPS/MF nº 13, de 9 de janeiro de 2026, art. 2.
+- 11% held by the company from a contribuinte individual: Lei 10.666/2003,
+  art. 4º, and Lei 8.212/1991, art. 30.
+- Monthly table, R$ 189,59 per dependent, R$ 607,20 simplified discount and the
+  reduction of Lei 15.270/2025: Receita Federal, "Tabelas" of 2026,
+  https://www.gov.br/receitafederal/pt-br/assuntos/meu-imposto-de-renda/tabelas/2026.
+
+**An accountant has to confirm these rules and figures before the first real
+payment.** The package computes what the tables say; it does not decide whether
+a partner may take the simplified discount, whether the INSS of another source
+already reached the ceiling in the month (only this package's payments are
+counted), what the DARF and the GPS are paid with, or how the municipal ISS
+applies. **The income tax on the return of an investment (the regressive table
+of the angel investor) is not computed**: it is left for the accountant to
+evaluate, and the package withholds nothing from an investment.
+
+The rates are in tables kept by the day they take effect
+(`WithholdingTable`, `NewBrazilWithholder`). The one this release carries is
+2026's, and a table stays in force until a later one replaces it, so the first
+closing of a new year is computed with the last table known; each invoice says
+which one it used (`WithholdingTable`). Upgrade in January, or pass a
+`Withholder` of the application's own in `Config.Withholder`.
+
+### RPA and the income report
+
+`Service().InvoiceRPA` (and `GET .../invoices/{id}/rpa`) writes the monthly
+receipt of the payment to an autonomous worker for an invoice that held a
+retention: payer, beneficiary, period, part, INSS and IRRF with how each came
+out, and what was paid. The file is kept on the Disk of `Config.Files`, like
+the signed contracts, under the invoice and the language, so the next request
+reads what the first wrote. The yearly income report lists what was credited,
+withheld (INSS and IRRF) and paid, month by month, by the month the amount was
+credited; the monthly report gets the columns of the retention when an invoice
+of the month has one.
+
+## Carry a loss forward
+
+`ContractRequest.CarryLoss` makes a period whose net is negative keep the loss
+(`Invoice.CarriedOut`) and take it off the net of the next periods
+(`Invoice.CarriedIn`), before the share, until it is used up. With a net of
+-R$ 1.000, then R$ 500, then R$ 4.000 and a share of 15%, the invoices pay 0, 0
+and 15% of R$ 3.500. The statement and the projection show the loss the open
+period starts with. Off, a losing period pays nothing and carries nothing.
+
+## A pay day per contract
+
+`ContractRequest.PayDay` (1–28) is the day of the month the partner is paid.
+The summary shows the earliest of the investor's contracts in force from today
+(`Service().NextPayoutOf`); a contract with none leaves it to
+`Config.NextPayout`, the application's day, as before.
+
+## Keep a product apart
+
+`Service().SeparateProduct(ctx, actor, "corujao")` marks a product as separate:
+a contract over "the whole application" and a cost of "the whole application"
+do not cover it. A contract or a cost that names it covers it all the same,
+and the product's revenue is still in the books. It is how one application
+carries another partner's line without that partner's revenue, costs and share
+leaking into the contracts that cover everything else. `JoinProduct` brings it
+back and `SeparateProducts` lists them; the change counts from the closings
+made after it. Nothing is separate by default.
 
 ## Install
 
@@ -280,6 +398,7 @@ field by its label ("Chave PIX: Preencha este campo.").
 | --- | --- | --- |
 | `Files` | yes | the Disk the signed contracts are kept on, under the tenant's prefix. |
 | `Wallet` | yes | arandu-wallet's service. The package keeps no balance of its own. |
+| `Withholder` | no | computes the retention at source of a partnership with a person; nil is `DefaultWithholder()`, the tables of 2026 |
 | `Prefix` | no | where the routes are mounted. Defaults to `/investor`. |
 | `PageSize` | no | rows per page. Defaults to 25, refused above 200. |
 | `Location` | no | the timezone days are counted in. Defaults to `America/Sao_Paulo`. |

@@ -184,6 +184,7 @@ func TestEveryServiceMethodAuthorizesBeforeTheModel(t *testing.T) {
 var generatedQueries = map[string]bool{
 	"Investors": true, "Contracts": true, "ContractProducts": true, "Entries": true,
 	"CostItems": true, "CostItemProducts": true, "Invoices": true, "InvoiceEntries": true,
+	"SeparateProducts": true, "InvestorTransfers": true,
 }
 
 // firstModelReach is where a Service first constructs the generated query or

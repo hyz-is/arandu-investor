@@ -92,6 +92,11 @@ func (u URLs) Receipt(invoiceID string) string {
 	return u.prefix + u.p.Invoices + "/" + invoiceID + u.p.Receipt
 }
 
+// RPA downloads the payment receipt of the retention held from an invoice.
+func (u URLs) RPA(invoiceID string) string {
+	return u.prefix + u.p.Invoices + "/" + invoiceID + u.p.RPA
+}
+
 // Investors is the admin's registry.
 func (u URLs) Investors() string { return u.admin + u.p.Investors }
 
@@ -178,6 +183,7 @@ func routeTable(c Config) []route {
 		{get, u.MyReports() + "/{year}", "investor.me.reports.annual", false},
 		{post, u.PayoutAccounts(), "investor.me.payout_accounts.store", false},
 		{get, u.Receipt(id), "investor.invoices.receipt", false},
+		{get, u.RPA(id), "investor.invoices.rpa", false},
 
 		// The admin's side.
 		{get, u.Investors(), "investor.admin.investors.index", true},

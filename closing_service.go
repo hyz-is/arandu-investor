@@ -86,6 +86,8 @@ func (s *InvestorService) recordClosing(ctx context.Context, g security.Grant, a
 	return s.record(ctx, g, actor, EventPeriodClosed, "investor_invoice", invoice.ID, map[string]any{
 		"investor_id": invoice.InvestorID, "period_start": string(invoice.PeriodStart), "period_end": string(invoice.PeriodEnd),
 		"net": invoice.Net, "amount": invoice.Amount, "status": string(invoice.Status),
+		"part_gross": invoice.GrossPart(), "withheld_inss": invoice.INSSAmount, "withheld_irrf": invoice.IRRFAmount,
+		"carried_in": invoice.CarriedIn, "carried_out": invoice.CarriedOut,
 	})
 }
 
@@ -246,7 +248,16 @@ func (s *InvestorService) closeContract(ctx context.Context, actor security.Subj
 			Scope:  v.scopeOf(),
 		})
 	}
-	figures := ComputeFigures(gross, fees, AllocateCosts(scoped, revenue, contract), current.ShareBps)
+	// A contract that carries its losses takes off the net what the periods
+	// before it left, and one that does not starts every period clean.
+	var carriedIn int64
+	if current.CarryLoss && last != nil {
+		carriedIn = last.CarriedOut
+	}
+	figures := ComputeFiguresCarrying(gross, fees, AllocateCosts(scoped, revenue, contract), current.ShareBps, carriedIn)
+	if !current.CarryLoss {
+		figures.CarriedOut = 0
+	}
 
 	invoice, err := Invoices(s.db).New()
 	if err != nil {
@@ -265,8 +276,9 @@ func (s *InvestorService) closeContract(ctx context.Context, actor security.Subj
 	invoice.CostRatioPPM = figures.CostRatioPPM
 	invoice.ShareBps = figures.ShareBps
 	invoice.Amount = figures.Amount
+	invoice.CarriedIn, invoice.CarriedOut = figures.CarriedIn, figures.CarriedOut
 	invoice.Status = InvoiceNothingDue
-	if figures.Amount > 0 {
+	if invoice.Amount > 0 {
 		invoice.Status = InvoiceAvailable
 	}
 	invoice.ClosedBy = actor.ID
@@ -284,6 +296,25 @@ func (s *InvestorService) closeContract(ctx context.Context, actor security.Subj
 		owner = locked
 		if !owner.IsActive() {
 			return validation.Errors{"investor": {message("investor_suspended")}}
+		}
+		// The retention at source of a partner who is a person, held from the
+		// investor's part and never from the base. It is computed here, with
+		// the investor's row locked, because the month's tax is over every
+		// payment of the month and another closing of the same investor may be
+		// waiting for the lock. An investment is paid the whole part.
+		if current.withholdsFor(owner) && figures.Amount > 0 {
+			day := DayOf(now, s.location())
+			held, err := s.withhold(ctx, g, owner, day, figures.Amount)
+			if err != nil {
+				return err
+			}
+			invoice.Amount = figures.Amount - held.Total()
+			invoice.WithholdingMonth, invoice.WithholdingTable, invoice.Dependents = monthOf(day), held.Table, owner.Dependents
+			invoice.INSSBase, invoice.INSSRateBps, invoice.INSSAmount = held.INSS.Base, held.INSS.RateBps, held.INSS.Amount
+			invoice.IRRFBase, invoice.IRRFRateBps, invoice.IRRFReduction, invoice.IRRFAmount = held.IRRF.Base, held.IRRF.RateBps, held.IRRF.Reduction, held.IRRF.Amount
+			if invoice.Amount <= 0 {
+				invoice.Status = InvoiceNothingDue
+			}
 		}
 		// An invoice still waiting when the next period closes is overdue: still
 		// the investor's to withdraw, and still its own period's.
@@ -340,13 +371,24 @@ func (s *InvestorService) closeContract(ctx context.Context, actor security.Subj
 		}
 		return nil, err
 	}
+	// The RPA of a retention is written now, while the beneficiary on it is
+	// the one the money was paid to. A failure to keep the file does not undo
+	// a closing that is already committed: the first request for the RPA writes
+	// it again.
+	if invoice.WithholdingMonth != "" {
+		_, _ = s.rpaFile(ctx, g, owner, invoice, s.labelsFor(ctx))
+	}
 	return invoice, nil
 }
 
 // scopeOfContract is the set of products a contract version counts.
 func (s *InvestorService) scopeOfContract(ctx context.Context, g security.Grant, c *Contract) (Scope, error) {
 	if c.AllProducts {
-		return Scope{All: true}, nil
+		separate, err := s.separateSet(ctx, g)
+		if err != nil {
+			return Scope{}, err
+		}
+		return Scope{All: true, Separate: separate}, nil
 	}
 	links, err := ContractProducts(s.db).Where("contract_id", "=", c.ID).Get(ctx, g)
 	if err != nil {

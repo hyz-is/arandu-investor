@@ -8,6 +8,66 @@ the versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 A published module version is immutable: Go serves it from the proxy forever, so
 a release is corrected by another release and never by moving a tag.
 
+## [0.10.0] - 2026-11-24
+
+### Added
+
+- **Two modes of contract.** `Contract.Kind` is `ContractKind`: `KindInvestment`
+  (the default, and what every contract that exists is) or `KindPartnership`, a
+  partner who brings work and receives a share of the net. `ContractRequest.Kind`
+  sets it; empty is an investment. The screens and the JSON say the mode.
+- **Retention at source for a partnership with a person.** The INSS of the
+  contribuinte individual (11%, up to the ceiling, with the month's payments
+  counted together) and the IRRF of the monthly table (the simplified discount,
+  the dependents and the reduction of Lei 15.270/2025) are held from the
+  partner's part when the invoice is created. The invoice carries the part
+  (`GrossPart()`), the base, rate and amount of each tax, the table used and the
+  month, and the amount paid; the wallet is credited with it and the withdrawal
+  asks for it. An investment holds nothing back, and a partner that is a company
+  holds nothing back either. The calculation is behind `Withholder`
+  (`Config.Withholder`; nil is `DefaultWithholder()`), with tables kept by the
+  day they take effect (`WithholdingTable`, `NewBrazilWithholder`) and the table
+  of 2026, `Withholding2026`, from the official sources named in the README. An
+  accountant has to confirm it before the first real payment.
+- `Investor.Dependents`, set by `CreateRequest.Dependents` and
+  `UpdateRequest.Dependents` (nil keeps what there is).
+- `InvestorService.InvoiceRPA` and the route `investor.invoices.rpa` (`GET
+  /invoices/{id}/rpa`, `Paths.RPA`): the receipt of the payment to an autonomous
+  worker of an invoice that held a retention, kept on the Disk of `Config.Files`.
+  The annual income report carries the INSS and the IRRF by the month they were
+  credited, and the monthly report gets their columns when the month has a
+  retention.
+- **Loss carried forward** (`ContractRequest.CarryLoss`, off by default): a period
+  whose net is negative keeps the loss and takes it off the next periods until it
+  is used up. `ComputeFiguresCarrying` is the calculation, `Invoice.CarriedIn`
+  and `CarriedOut` the figures, `Statement.CarriedLoss` and
+  `Projection.CarriedIn` what the open period starts with.
+- **A pay day per contract** (`ContractRequest.PayDay`, 1 to 28, empty follows the
+  application): `NextPayDay` and `InvestorService.NextPayoutOf`, which the
+  summary reads before `Config.NextPayout`.
+- **Separate products**: `InvestorService.SeparateProduct`, `JoinProduct` and
+  `SeparateProducts`. A contract and a cost of "the whole application" do not
+  cover a separate product; naming it covers it. `Scope.Separate` carries them.
+  The activity log records `product.separated` and `product.joined`.
+- Migrations, run by `aru migrate`: `20261124_0003_add_investor_dependents`,
+  `20261124_0004_add_contract_kind_and_terms` (the kind, defaulting to
+  `investment`, the carry option and the pay day),
+  `20261124_0005_add_invoice_carry_and_withholding`,
+  `20261124_0006_create_investor_separate_products` and
+  `20261124_0007_widen_investor_separate_products_time_precision`.
+
+### Changed
+
+- `Invoice.Amount` is still what the investor is paid; for a partnership that is
+  the part less the retention, and `GrossPart()` is the part. Nothing differs for
+  an investment.
+- The published views show the mode, the pay day and the retention columns, and
+  the admin's forms ask for the mode, the pay day and the carry option. An
+  application that published the views takes the new ones with
+  `aru vendor:publish --tag=view --apply`; the page data only gained fields.
+- `Contract`, `Invoice` and `Investor` gained fields, `ContractRow`, `InvoiceRow`
+  and the page data of the screens too, and `Paths` the segment `RPA`.
+
 ## [0.9.2] - 2026-11-24
 
 ### Security

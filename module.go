@@ -94,6 +94,7 @@ func New(cfg Config, db *data.DB, sessions *security.SessionStore) (*Module, err
 	svc.loc = cfg.Location
 	svc.wallets = cfg.Wallet
 	svc.payer = cfg.Payer
+	svc.withholder = cfg.Withholder
 	svc.activity = cfg.Activity
 	m := &Module{
 		cfg:      cfg,
@@ -184,6 +185,7 @@ func (m *Module) handlers() map[string]func(*fhttp.Context) error {
 		"investor.me.reports.annual":          m.myAnnualReport,
 		"investor.me.payout_accounts.store":   m.storePayoutAccount,
 		"investor.invoices.receipt":           m.invoiceReceipt,
+		"investor.invoices.rpa":               m.invoiceRPA,
 		"investor.admin.investors.index":      m.index,
 		"investor.admin.investors.store":      m.store,
 		"investor.admin.investors.show":       m.show,
@@ -462,6 +464,8 @@ func (m *Module) show(ctx *fhttp.Context) error {
 		Investor:            investorRow(m.URLs(), sc.Labels, record),
 		LegalName:           record.LegalName,
 		LegalRepresentative: record.LegalRepresentative,
+		Dependents:          record.Dependents,
+		IsPerson:            record.Kind == Person,
 		Contracts:           contractRows(m.URLs(), sc.Labels, contracts),
 		Invoices:            invoiceRows(m.URLs(), sc.Labels, invoices),
 		ContractStoreURL:    u.InvestorContracts(record.ID),
@@ -513,6 +517,11 @@ func (m *Module) mine(ctx *fhttp.Context) error {
 // nextPayout is the day of the next payment as the application says it, empty
 // when it does not or has none to give.
 func (m *Module) nextPayout(ctx *fhttp.Context, who security.Subject) string {
+	// A contract that sets its own day of payment speaks first: the day the
+	// application says is for the investors whose contracts set none.
+	if day, err := m.svc.NextPayoutOf(ctx.Ctx(), who, m.today()); err == nil && !day.IsZero() {
+		return dayText(day)
+	}
 	if m.cfg.NextPayout == nil {
 		return ""
 	}
@@ -608,6 +617,7 @@ func (m *Module) store(ctx *fhttp.Context) error {
 		LegalName:           ctx.Input("legal_name"),
 		LegalRepresentative: ctx.Input("legal_representative"),
 		Email:               ctx.Input("email"),
+		Dependents:          atoi(ctx.Input("dependents")),
 	}
 
 	who, _ := ctx.User()
@@ -628,6 +638,10 @@ func (m *Module) update(ctx *fhttp.Context) error {
 		LegalName:           ctx.Input("legal_name"),
 		LegalRepresentative: ctx.Input("legal_representative"),
 		Email:               ctx.Input("email"),
+	}
+	if raw := strings.TrimSpace(ctx.Input("dependents")); raw != "" {
+		n := atoi(raw)
+		in.Dependents = &n
 	}
 	who, _ := ctx.User()
 	record, err := m.svc.Update(ctx.Ctx(), who, ctx.Param("id"), in)
@@ -690,6 +704,9 @@ func contractForm(ctx *fhttp.Context) (ContractRequest, io.ReadCloser, error) {
 		BillingDay:  day,
 		AllProducts: ctx.Request.FormValue("all_products") == "1" || ctx.Request.FormValue("all_products") == "true",
 		Products:    splitProducts(ctx.Request.MultipartForm.Value["products"]),
+		Kind:        ContractKind(strings.TrimSpace(ctx.Request.FormValue("kind"))),
+		CarryLoss:   ctx.Request.FormValue("carry_loss") == "1" || ctx.Request.FormValue("carry_loss") == "true",
+		PayDay:      atoi(ctx.Request.FormValue("pay_day")),
 	}
 	// A form ticks "the whole application" by default; naming products is
 	// what narrows it.
@@ -703,6 +720,20 @@ func contractForm(ctx *fhttp.Context) (ContractRequest, io.ReadCloser, error) {
 	in.FileName = header.Filename
 	in.FileType = header.Header.Get("Content-Type")
 	return in, file, nil
+}
+
+// atoi reads a whole number out of a field, and answers -1 for text that is not
+// one so the validation refuses it where an empty field is zero.
+func atoi(raw string) int {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil {
+		return -1
+	}
+	return n
 }
 
 // splitProducts reads product identifiers sent as repeated fields, as a
@@ -832,7 +863,7 @@ func (m *Module) statement(ctx *fhttp.Context) error {
 		Screen: sc, Contract: contract, Rows: rows,
 		Gross: brl(st.Gross), Fees: brl(st.Fees), Costs: brl(st.Costs), Net: brl(st.Net),
 		From: string(from), To: string(to), Kind: ctx.Query("kind"), Product: ctx.Query("product"),
-		URL: contract.StatementURL, HasEstimates: estimates,
+		URL: contract.StatementURL, HasEstimates: estimates, CarriedLoss: brlOrEmpty(st.CarriedLoss),
 	})
 }
 
@@ -867,6 +898,8 @@ func (m *Module) projection(ctx *fhttp.Context) error {
 		PeriodStart: dayText(p.PeriodStart), PeriodEnd: dayText(p.PeriodEnd.AddDays(-1)),
 		Costs: costs, Gross: brl(p.Gross), Fees: brl(p.Fees), ProjectedCosts: brl(p.ProjectedCosts),
 		Ratio: ratioText(p.EstimatedCostRatioPPM), EstimatedNet: brl(p.EstimatedNet), EstimatedAmount: brl(p.EstimatedAmount),
+		CarriedIn: brlOrEmpty(p.CarriedIn), EstimatedCarriedOut: brlOrEmpty(p.EstimatedCarriedOut),
+		EstimatedGrossPart: grossPartIf(p), EstimatedWithheld: brlOrEmpty(p.EstimatedWithheld),
 	})
 }
 
@@ -975,6 +1008,19 @@ func (m *Module) invoices(ctx *fhttp.Context) error {
 		return err
 	}
 	return ctx.JSON(stdhttp.StatusOK, invoiceViewsResource(list))
+}
+
+// invoiceRPA streams the RPA of an invoice that held a retention at source.
+func (m *Module) invoiceRPA(ctx *fhttp.Context) error {
+	who, _ := ctx.User()
+	name, body, err := m.svc.InvoiceRPA(ctx.Ctx(), who, ctx.Param("id"))
+	if err != nil {
+		return err
+	}
+	return spreadsheet(ctx, name, func(w io.Writer) error {
+		_, err := w.Write(body)
+		return err
+	})
 }
 
 // spreadsheet streams an .xlsx the report writes.
@@ -1327,6 +1373,9 @@ func (m *Module) Migrations() []foundation.Migration {
 		widenInvestorTimePrecision,
 		createInvestorTransfers{},
 		widenInvestorTransfersTimePrecision,
+		addInvestorDependents{}, addContractKindAndTerms{}, addInvoiceCarryAndWithholding{},
+		createSeparateProducts{},
+		widenSeparateProductsTimePrecision,
 	}
 }
 
@@ -1702,4 +1751,154 @@ func (createInvestorTransfers) Up(ctx context.Context, conn migrations.Connectio
 // Down drops the table.
 func (createInvestorTransfers) Down(ctx context.Context, conn migrations.Connection) error {
 	return conn.Schema().DropIfExists(ctx, investorTransfersTable)
+}
+
+// widenSeparateProductsTimePrecision raises the date-time columns of
+// investor_separate_products to microseconds, as the other tables of the
+// module are.
+var widenSeparateProductsTimePrecision = migrations.WidenTimePrecision{
+	Name:   "20261124_0007_widen_investor_separate_products_time_precision",
+	Tables: []string{separateProductsTable},
+}
+
+var (
+	_ migrations.ReversibleMigration = addInvestorDependents{}
+	_ migrations.ReversibleMigration = addContractKindAndTerms{}
+	_ migrations.ReversibleMigration = addInvoiceCarryAndWithholding{}
+	_ migrations.ReversibleMigration = createSeparateProducts{}
+)
+
+// addInvestorDependents adds the number of dependents an investor declared.
+type addInvestorDependents struct{ migrations.BaseMigration }
+
+// GetName is the migration's identity, and it carries the order.
+func (addInvestorDependents) GetName() string { return "20261124_0003_add_investor_dependents" }
+
+// Up adds the column. Every investor that exists declared none.
+func (addInvestorDependents) Up(ctx context.Context, conn migrations.Connection) error {
+	return conn.Schema().Table(ctx, investorsTable, func(table *schema.Blueprint) {
+		table.UnsignedSmallInteger("dependents").Default(0)
+	})
+}
+
+// Down drops the column.
+func (addInvestorDependents) Down(ctx context.Context, conn migrations.Connection) error {
+	return conn.Schema().DropColumns(ctx, investorsTable, []string{"dependents"})
+}
+
+// addContractKindAndTerms adds the kind of a contract, whether it carries its
+// losses and the day its partner is paid.
+type addContractKindAndTerms struct{ migrations.BaseMigration }
+
+// GetName is the migration's identity, and it carries the order.
+func (addContractKindAndTerms) GetName() string { return "20261124_0004_add_contract_kind_and_terms" }
+
+// Up adds the columns. Every contract that exists is an investment that does
+// not carry its losses and follows the application's day of payment: what it
+// has always been.
+func (addContractKindAndTerms) Up(ctx context.Context, conn migrations.Connection) error {
+	return conn.Schema().Table(ctx, contractsTable, func(table *schema.Blueprint) {
+		table.String("kind", maxShortLen).Default(string(KindInvestment))
+		table.UnsignedSmallInteger("carry_loss").Default(0)
+		table.UnsignedSmallInteger("pay_day").Default(0)
+	})
+}
+
+// Down drops the columns.
+func (addContractKindAndTerms) Down(ctx context.Context, conn migrations.Connection) error {
+	return conn.Schema().DropColumns(ctx, contractsTable, []string{"kind", "carry_loss", "pay_day"})
+}
+
+// addInvoiceCarryAndWithholding adds to an invoice the loss it carried in and
+// out, and the retention at source held from its amount.
+type addInvoiceCarryAndWithholding struct{ migrations.BaseMigration }
+
+// GetName is the migration's identity, and it carries the order.
+func (addInvoiceCarryAndWithholding) GetName() string {
+	return "20261124_0005_add_invoice_carry_and_withholding"
+}
+
+// invoiceWithholdingIndex is the index the month's retention is read by.
+const invoiceWithholdingIndex = "investor_invoices_withholding_idx"
+
+// invoiceWithholdingColumns are the columns this migration adds to invoices.
+var invoiceWithholdingColumns = []string{
+	"carried_in", "carried_out", "inss_base", "inss_rate_bps", "inss_amount", "irrf_base", "irrf_rate_bps",
+	"irrf_reduction", "irrf_amount", "dependents", "withholding_table", "withholding_month",
+}
+
+// Up adds the columns. Every invoice that exists carried nothing and held
+// nothing back, and its amount is what the investor was paid.
+func (addInvoiceCarryAndWithholding) Up(ctx context.Context, conn migrations.Connection) error {
+	return conn.Schema().Table(ctx, invoicesTable, func(table *schema.Blueprint) {
+		table.BigInteger("carried_in").Default(0)
+		table.BigInteger("carried_out").Default(0)
+		table.BigInteger("inss_base").Default(0)
+		table.BigInteger("inss_rate_bps").Default(0)
+		table.BigInteger("inss_amount").Default(0)
+		table.BigInteger("irrf_base").Default(0)
+		table.BigInteger("irrf_rate_bps").Default(0)
+		table.BigInteger("irrf_reduction").Default(0)
+		table.BigInteger("irrf_amount").Default(0)
+		table.UnsignedSmallInteger("dependents").Default(0)
+		table.String("withholding_table", maxShortLen).Default("")
+		table.String("withholding_month", 7).Default("")
+		table.Index([]string{"tenant_id", "investor_id", "withholding_month"}, invoiceWithholdingIndex)
+	})
+}
+
+// Down drops the index and the columns.
+func (addInvoiceCarryAndWithholding) Down(ctx context.Context, conn migrations.Connection) error {
+	if err := conn.Schema().Table(ctx, invoicesTable, func(table *schema.Blueprint) {
+		table.DropIndex(invoiceWithholdingIndex)
+	}); err != nil {
+		return err
+	}
+	return conn.Schema().DropColumns(ctx, invoicesTable, invoiceWithholdingColumns)
+}
+
+// createSeparateProducts is the table of the products kept apart from "the
+// whole application".
+type createSeparateProducts struct{ migrations.BaseMigration }
+
+// GetName is the migration's identity, and it carries the order.
+func (createSeparateProducts) GetName() string {
+	return "20261124_0006_create_investor_separate_products"
+}
+
+// Up creates the table, with a product named once per tenant.
+func (createSeparateProducts) Up(ctx context.Context, conn migrations.Connection) error {
+	return conn.Schema().Create(ctx, separateProductsTable, func(table *schema.Blueprint) {
+		table.String("id", maxIdentifierLen).Primary()
+		table.String("tenant_id", maxIdentifierLen)
+		table.String("product_id", maxIdentifierLen)
+		table.String("created_by", maxIdentifierLen)
+		table.Timestamp("created_at")
+		table.Timestamp("updated_at")
+
+		table.Unique([]string{"tenant_id", "product_id"}, "investor_separate_products_uq")
+	})
+}
+
+// Down drops the table.
+func (createSeparateProducts) Down(ctx context.Context, conn migrations.Connection) error {
+	return conn.Schema().DropIfExists(ctx, separateProductsTable)
+}
+
+// brlOrEmpty is the amount in reais, and nothing for zero: a screen draws a
+// line only for a figure there is.
+func brlOrEmpty(cents int64) string {
+	if cents == 0 {
+		return ""
+	}
+	return brl(cents)
+}
+
+// grossPartIf is the projection's part before the retention, only when the
+// projection holds something back.
+func grossPartIf(p *Projection) string {
+	if p.EstimatedWithheld == 0 {
+		return ""
+	}
+	return brl(p.EstimatedGrossPart)
 }

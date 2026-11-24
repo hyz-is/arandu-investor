@@ -48,7 +48,7 @@ func projectionTable(data ProjectionData) components.DataTableProps {
 <section class="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
 	<header class="flex flex-wrap items-start justify-between gap-4">
 		<div>
-			<p class="text-muted-foreground text-xs font-medium uppercase tracking-wide">{{ .Labels.T("noun.contract") }} {{ .Contract.Number }} · v{{ .Contract.Version }} · {{ .Contract.Share }}</p>
+			<p class="text-muted-foreground text-xs font-medium uppercase tracking-wide">{{ .Labels.T("noun.contract") }} {{ .Contract.Number }} · v{{ .Contract.Version }} · {{ .Contract.Kind }} · {{ .Contract.Share }}</p>
 			<h1 class="mt-1 text-2xl font-semibold tracking-tight">{{ .Labels.T("screen.projection_title") }}</h1>
 			<p class="text-muted-foreground mt-1 max-w-prose text-sm">{{ .Labels.T("screen.projection_lead") }}</p>
 			<p class="mt-2 text-sm font-medium">{{ .PeriodStart }} a {{ .PeriodEnd }}</p>
@@ -65,6 +65,16 @@ func projectionTable(data ProjectionData) components.DataTableProps {
 		<div class="card p-4"><dt class="text-muted-foreground text-xs">{{ .Labels.T("screen.projection_costs") }}</dt><dd class="mt-1 text-lg font-semibold tabular-nums">{{ .ProjectedCosts }}</dd></div>
 		<div class="card p-4"><dt class="text-muted-foreground text-xs">{{ .Labels.T("field.ratio") }}</dt><dd class="mt-1 text-lg font-semibold tabular-nums">{{ .Ratio }}</dd></div>
 		<div class="card p-4"><dt class="text-muted-foreground text-xs">{{ .Labels.T("screen.estimated_net") }}</dt><dd class="mt-1 text-lg font-semibold tabular-nums">{{ .EstimatedNet }}</dd></div>
+		@if(.CarriedIn != "")
+			<div class="card p-4"><dt class="text-muted-foreground text-xs">{{ .Labels.T("screen.carried_loss") }}</dt><dd class="mt-1 text-lg font-semibold tabular-nums">{{ .CarriedIn }}</dd></div>
+		@endif
+		@if(.EstimatedCarriedOut != "")
+			<div class="card p-4"><dt class="text-muted-foreground text-xs">{{ .Labels.T("screen.estimated_carried_out") }}</dt><dd class="mt-1 text-lg font-semibold tabular-nums">{{ .EstimatedCarriedOut }}</dd></div>
+		@endif
+		@if(.EstimatedWithheld != "")
+			<div class="card p-4"><dt class="text-muted-foreground text-xs">{{ .Labels.T("screen.estimated_part") }}</dt><dd class="mt-1 text-lg font-semibold tabular-nums">{{ .EstimatedGrossPart }}</dd></div>
+			<div class="card p-4"><dt class="text-muted-foreground text-xs">{{ .Labels.T("screen.estimated_withheld") }}</dt><dd class="mt-1 text-lg font-semibold tabular-nums">{{ .EstimatedWithheld }}</dd></div>
+		@endif
 		<div class="card border-primary p-4"><dt class="text-muted-foreground text-xs">{{ .Labels.T("screen.estimated_amount") }}</dt><dd class="mt-1 text-xl font-semibold tabular-nums">{{ .EstimatedAmount }}</dd></div>
 	</dl>
 

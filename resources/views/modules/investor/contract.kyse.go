@@ -15,6 +15,15 @@ import (
 // ContractData is what the handler hands this page.
 type ContractData = investor.ContractPageData
 
+// payDay is the day the contract pays its partner, a dash for one that follows
+// the application's.
+func payDay(c investor.ContractRow) string {
+	if c.PayDay == "" {
+		return "—"
+	}
+	return c.PayDay
+}
+
 func dashboardContracts(data ContractData) components.DataTableProps {
 	rows := make([]components.TableRow, 0, len(data.Contracts))
 	for _, c := range data.Contracts {
@@ -29,9 +38,11 @@ func dashboardContracts(data ContractData) components.DataTableProps {
 		}
 		rows = append(rows, components.TableRow{Key: c.ID, Cells: []components.TableCell{
 			{Text: c.Number + " v" + strconv.Itoa(c.Version)},
+			{HTML: components.Badge(components.BadgeProps{Label: c.Kind, Variant: "secondary"})},
 			{Text: c.Share},
 			{Text: c.Products},
 			{Text: strconv.Itoa(c.BillingDay), SortValue: strconv.Itoa(100 + c.BillingDay)},
+			{Text: payDay(c)},
 			{Text: c.Period},
 			{HTML: components.Badge(components.BadgeProps{Label: c.Status, Variant: variant})},
 			{HTML: template.HTML(links)},
@@ -43,9 +54,11 @@ func dashboardContracts(data ContractData) components.DataTableProps {
 		FullPager: true, HeaderMenu: true,
 		Columns: []components.TableColumn{
 			{Label: data.Labels.T("field.number"), Key: "number", Sortable: true},
+			{Label: data.Labels.T("field.contract_kind"), Key: "kind"},
 			{Label: data.Labels.T("field.share"), Key: "share"},
 			{Label: data.Labels.T("field.products"), Key: "products", Hideable: true},
 			{Label: data.Labels.T("field.billing_day"), Key: "billing_day", Hideable: true},
+			{Label: data.Labels.T("field.pay_day"), Key: "pay_day", Hideable: true},
 			{Label: data.Labels.T("field.period"), Key: "period", Hideable: true},
 			{Label: data.Labels.T("field.status"), Key: "status"},
 			{Label: data.Labels.T("field.actions"), Key: "links"},

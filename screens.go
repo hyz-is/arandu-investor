@@ -119,6 +119,8 @@ func contractRows(u URLs, l Labels, list []ContractResource) []ContractRow {
 			Status: l.T("status." + string(c.Status)), Starts: dayText(c.StartsOn), Ends: ends,
 			Period:  dayText(c.StartsOn) + " — " + ends,
 			Version: c.Version, BillingDay: c.BillingDay, Active: c.Status == ContractActive,
+			Kind: l.T("contract_kind." + string(c.Kind.Or())), KindKey: string(c.Kind.Or()),
+			Partnership: c.IsPartnership(), CarryLoss: bool(c.CarryLoss),
 			StatementURL:  u.Statement(c.ID),
 			ProjectionURL: u.Projection(c.ID),
 			CloseURL:      u.Close(c.ID),
@@ -126,6 +128,9 @@ func contractRows(u URLs, l Labels, list []ContractResource) []ContractRow {
 		}
 		if c.FileKey != "" {
 			row.FileURL = u.ContractFile(c.ID)
+		}
+		if c.PayDay > 0 {
+			row.PayDay = strconv.Itoa(c.PayDay)
 		}
 		rows = append(rows, row)
 	}
@@ -263,9 +268,14 @@ func invoiceRows(u URLs, l Labels, views []InvoiceView) []InvoiceRow {
 			ID: inv.ID, Period: periodText(inv.PeriodStart, inv.PeriodEnd),
 			Gross: brl(inv.Gross), Fees: brl(inv.Fees), Costs: brl(inv.Costs), Net: brl(inv.Net),
 			Share: percentText(inv.ShareBps), Amount: brl(inv.Amount),
+			Part: brl(inv.GrossPart()), Withheld: brl(inv.Withheld()), INSS: brl(inv.INSSAmount), IRRF: brl(inv.IRRFAmount),
+			CarriedIn: brl(inv.CarriedIn), CarriedOut: brl(inv.CarriedOut), Retained: inv.WithholdingMonth != "",
 			Status: l.Status(inv.Status), StatusKey: string(inv.Status),
 			Withdrawable: v.Withdrawable(),
 			WithdrawURL:  u.Withdraw(inv.ID),
+		}
+		if inv.WithholdingMonth != "" {
+			row.RPAURL = u.RPA(inv.ID)
 		}
 		if w := v.Withdrawal; w != nil {
 			row.Withdrawal = l.T("withdrawal." + string(w.Status))
@@ -384,6 +394,15 @@ func (s Screen) PersonOptions() []components.SelectOption {
 	return []components.SelectOption{
 		{Value: string(Person), Label: s.Labels.T("person.person")},
 		{Value: string(Company), Label: s.Labels.T("person.company")},
+	}
+}
+
+// ContractKindOptions are the modes of a contract: an investment and a
+// partnership.
+func (s Screen) ContractKindOptions() []components.SelectOption {
+	return []components.SelectOption{
+		{Value: string(KindInvestment), Label: s.Labels.T("contract_kind.investment")},
+		{Value: string(KindPartnership), Label: s.Labels.T("contract_kind.partnership")},
 	}
 }
 

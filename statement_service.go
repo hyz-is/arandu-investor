@@ -2,6 +2,7 @@ package investor
 
 import (
 	"context"
+	"errors"
 
 	"github.com/arandu-io/framework/security"
 	"github.com/arandu-io/framework/validation"
@@ -23,21 +24,34 @@ type Statement struct {
 	// Open marks the lines whose cost share is an estimate: they belong to the
 	// period that has not closed yet, whose costs are the projection's.
 	Open map[string]bool
+	// CarriedLoss is the loss of the closed periods that the open one starts
+	// with, to be taken off its net before the share: zero for a contract that
+	// does not carry its losses.
+	CarriedLoss int64
 }
 
 // Projection is the open period of a contract: what it is expected to cost,
 // what came in so far, and where that leaves the investor if nothing else
 // happens before it closes.
 type Projection struct {
-	Contract              Contract
-	PeriodStart           Day
-	PeriodEnd             Day
-	Costs                 []ProjectedCost
-	Gross, Fees           int64
-	ProjectedCosts        int64
-	EstimatedNet          int64
-	EstimatedAmount       int64
-	EstimatedCostRatioPPM int64
+	Contract       Contract
+	PeriodStart    Day
+	PeriodEnd      Day
+	Costs          []ProjectedCost
+	Gross, Fees    int64
+	ProjectedCosts int64
+	EstimatedNet   int64
+	// EstimatedAmount is what the investor would be paid if the period closed
+	// as it stands: their part less the retention at source, when there is one.
+	EstimatedAmount int64
+	// CarriedIn is the loss of the closed periods taken off the net before the
+	// share, and EstimatedCarriedOut the loss that would be left for the next.
+	CarriedIn, EstimatedCarriedOut int64
+	// EstimatedGrossPart is the investor's part before any retention, and
+	// EstimatedWithheld what the retention of a partnership would hold back of
+	// it, as the tables in force estimate it. Zero for an investment.
+	EstimatedGrossPart, EstimatedWithheld int64
+	EstimatedCostRatioPPM                 int64
 }
 
 // ProjectedCost is one declared cost and how much of it falls in the open
@@ -149,7 +163,7 @@ func (s *InvestorService) StatementOf(ctx context.Context, actor security.Subjec
 		return nil, err
 	}
 
-	st := &Statement{Contract: *contract, Open: map[string]bool{}}
+	st := &Statement{Contract: *contract, Open: map[string]bool{}, CarriedLoss: projection.CarriedIn}
 	for _, e := range rows {
 		if !scope.covers(e.ProductID) {
 			continue
@@ -248,10 +262,35 @@ func (s *InvestorService) project(ctx context.Context, g security.Grant, contrac
 		p.Costs = append(p.Costs, ProjectedCost{Item: v.Item, Products: v.Products, Amount: amount})
 		scoped = append(scoped, ScopedCost{Amount: amount, Scope: v.scopeOf()})
 	}
-	f := ComputeFigures(p.Gross, p.Fees, AllocateCosts(scoped, revenue, scope), contract.ShareBps)
+	if contract.CarryLoss && last != nil {
+		p.CarriedIn = last.CarriedOut
+	}
+	f := ComputeFiguresCarrying(p.Gross, p.Fees, AllocateCosts(scoped, revenue, scope), contract.ShareBps, p.CarriedIn)
+	if !contract.CarryLoss {
+		f.CarriedOut = 0
+	}
 	p.ProjectedCosts = f.Costs
 	p.EstimatedNet = f.Net
+	p.EstimatedGrossPart = f.Amount
 	p.EstimatedAmount = f.Amount
+	p.EstimatedCarriedOut = f.CarriedOut
 	p.EstimatedCostRatioPPM = f.CostRatioPPM
+	if f.Amount > 0 && contract.IsPartnership() {
+		owner, err := Investors(s.db).WhereKey(contract.InvestorID).First(ctx, g)
+		if err != nil {
+			return nil, err
+		}
+		if contract.withholdsFor(owner) {
+			held, err := s.withhold(ctx, g, owner, end, f.Amount)
+			switch {
+			case errors.Is(err, ErrNoWithholdingTable):
+			case err != nil:
+				return nil, err
+			default:
+				p.EstimatedWithheld = held.Total()
+				p.EstimatedAmount = f.Amount - held.Total()
+			}
+		}
+	}
 	return p, nil
 }

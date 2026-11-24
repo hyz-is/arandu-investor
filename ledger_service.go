@@ -363,6 +363,9 @@ func (s *InvestorService) EndCost(ctx context.Context, actor security.Subject, c
 type CostView struct {
 	Item     CostItem
 	Products []string
+	// separate are the products kept apart, which a cost of the whole
+	// application does not cover.
+	separate map[string]bool
 }
 
 // Costs lists the declared costs, for the admin and for the investors: what
@@ -404,9 +407,13 @@ func (s *InvestorService) loadCosts(ctx context.Context, g security.Grant) ([]Co
 	for _, l := range links {
 		byItem[l.CostItemID] = append(byItem[l.CostItemID], l.ProductID)
 	}
+	separate, err := s.separateSet(ctx, g)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]CostView, 0, len(items))
 	for _, item := range items {
-		out = append(out, CostView{Item: *item, Products: byItem[item.ID]})
+		out = append(out, CostView{Item: *item, Products: byItem[item.ID], separate: separate})
 	}
 	return out, nil
 }
@@ -414,7 +421,7 @@ func (s *InvestorService) loadCosts(ctx context.Context, g security.Grant) ([]Co
 // scopeOf is the scope of a cost as the calculation takes it.
 func (c CostView) scopeOf() Scope {
 	if c.Item.AllProducts {
-		return Scope{All: true}
+		return Scope{All: true, Separate: c.separate}
 	}
 	set := map[string]bool{}
 	for _, p := range c.Products {

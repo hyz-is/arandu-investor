@@ -89,7 +89,13 @@
         "holder_name": "Titular",
         "holder_document": "Documento do titular",
         "request_id": "Pedido de saque",
-        "receipt_name": "Nome do arquivo do comprovante"
+        "receipt_name": "Nome do arquivo do comprovante",
+        "dependents": "Dependentes",
+        "pay_day": "Dia de pagamento",
+        "carry_loss": "Levar o prejuízo adiante",
+        "contract_kind": "Tipo",
+        "rpa": "Recibo (RPA)",
+        "part": "Parte"
     },
     "screen": {
         "dashboard_title": "Painel do investidor",
@@ -177,7 +183,15 @@
         "next_payout_note": "dia em que a equipe paga o período fechado",
         "in_payment_note": "pedido feito, aguardando a equipe pagar",
         "withdraw_now": "Sacar",
-        "see_withdrawals": "Saques"
+        "see_withdrawals": "Saques",
+        "carried_loss": "Prejuízo de períodos anteriores",
+        "carried_loss_note": "O período aberto começa com um prejuízo a compensar: ele é abatido do líquido antes de aplicar a sua parte.",
+        "estimated_part": "Sua parte estimada, antes da retenção",
+        "estimated_withheld": "Retenção na fonte (INSS e IRRF)",
+        "estimated_carried_out": "Prejuízo que seguiria adiante",
+        "carry_loss_hint": "O período com líquido negativo guarda o prejuízo e o abate dos seguintes.",
+        "pay_day_hint": "Vazio segue o dia do aplicativo.",
+        "kind_hint": "A parceria retém INSS e IRRF de um parceiro pessoa física; o investimento não retém nada."
     },
     "control": {
         "search_label": "Buscar em :label",
@@ -311,7 +325,9 @@
         "withdrawal_requested": "Saque solicitado pelo investidor",
         "withdrawal_processing": "Pagamento do saque iniciado",
         "withdrawal_paid": "Saque marcado como pago, com comprovante",
-        "withdrawal_rejected": "Saque rejeitado"
+        "withdrawal_rejected": "Saque rejeitado",
+        "product_separated": "Produto separado do aplicativo inteiro",
+        "product_joined": "Produto de volta ao aplicativo inteiro"
     },
     "validation": {
         "summary": ":field: :message",
@@ -369,7 +385,10 @@
         "transfer_funds": "A carteira do dono anterior ainda tem saldo: pague o valor antes da transferência.",
         "transfer_withdrawals": "O dono anterior tem um saque em andamento: conclua o saque antes da transferência.",
         "reason_required": "Informe o motivo, com até :max caracteres.",
-        "account_details": "Descreva a conta: chave PIX, conta bancária ou endereço."
+        "account_details": "Descreva a conta: chave PIX, conta bancária ou endereço.",
+        "dependents_range": "Informe um número de 0 a :max.",
+        "contract_kind": "Escolha investimento ou parceria.",
+        "pay_day": "Informe um dia de 1 a 28, ou deixe vazio."
     },
     "report": {
         "summary_sheet": "Resumo",
@@ -393,7 +412,14 @@
         "withheld": "Imposto retido",
         "total": "Total",
         "share_note": "Os valores são a participação do investidor-anjo nos resultados, creditados por fatura de período fechado.",
-        "tax_note": "Nenhum imposto foi retido na fonte por este sistema. A classificação na declaração é do contador do beneficiário."
+        "tax_note": "Nenhum imposto foi retido na fonte por este sistema. A classificação na declaração é do contador do beneficiário.",
+        "part": "Parte antes da retenção",
+        "withheld_inss": "INSS retido",
+        "withheld_irrf": "IRRF retido",
+        "paid": "Líquido pago",
+        "carried_in": "Prejuízo trazido",
+        "carried_out": "Prejuízo levado",
+        "tax_note_withheld": "O INSS e o IRRF foram retidos na fonte pela pagadora, no mês em que o valor foi creditado, sobre a parte do parceiro. A forma de declará-los é decisão do contador do beneficiário."
     },
     "month": {
         "1": "janeiro",
@@ -416,5 +442,25 @@
         "reports": "Relatórios",
         "menu": "Seções da área do investidor",
         "menu_label": "Seções"
+    },
+    "contract_kind": {
+        "investment": "Investimento",
+        "partnership": "Parceria"
+    },
+    "rpa": {
+        "sheet": "Recibo RPA",
+        "title": "Recibo de Pagamento a Autônomo (RPA) — :month de :year",
+        "file": "recibo-rpa-:period.xlsx",
+        "service": "Serviço",
+        "calculation": "Cálculo",
+        "base": "Base de cálculo",
+        "rate": "Alíquota",
+        "amount": "Valor",
+        "irrf_reduction": "Redução do IRRF (Lei 15.270/2025)",
+        "total_withheld": "Total retido",
+        "table_note": "Tabelas e alíquotas usadas: :table.",
+        "month_note": "O imposto de renda é calculado sobre todos os pagamentos do mês ao mesmo beneficiário: a base é a do mês, e este pagamento retém a diferença.",
+        "employer_note": "A contribuição patronal é custo da pagadora e não é descontada do beneficiário.",
+        "review_note": "Valores a confirmar pelo contador da pagadora antes de serem lançados ou pagos."
     }
 }

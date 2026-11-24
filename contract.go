@@ -50,6 +50,22 @@ type Contract struct {
 	// only the products listed for it count.
 	AllProducts Flag `db:"all_products"`
 
+	// Kind is what the contract is: an investment, where a person puts money
+	// in and receives a return, or a partnership, where the partner brings work
+	// and receives a share of the net. Empty reads as an investment, which is
+	// what every contract was before the kind existed. The retention at source
+	// of a person (INSS and IRRF) is the partnership's alone.
+	Kind ContractKind `db:"kind"`
+
+	// CarryLoss says a period whose net came out negative keeps the loss and
+	// takes it off the periods that follow, until it is used up. Off, which
+	// is the default, a losing period pays nothing and carries nothing.
+	CarryLoss Flag `db:"carry_loss"`
+
+	// PayDay is the day of the month the contract's partner is paid, 1 to 28,
+	// or zero to follow the day the application says (Config.NextPayout).
+	PayDay int `db:"pay_day"`
+
 	// Status is whether this version is the one in force.
 	Status ContractStatus `db:"status"`
 
@@ -65,6 +81,59 @@ type Contract struct {
 	CreatedBy string    `db:"created_by"`
 	CreatedAt time.Time `db:"created_at"`
 	UpdatedAt time.Time `db:"updated_at"`
+}
+
+// ContractKind is what a contract is: the way the investor takes part.
+type ContractKind string
+
+const (
+	// KindInvestment is a person or a company that puts money in and receives a
+	// return on it. It is the default, and nothing is held back from what is
+	// paid.
+	KindInvestment ContractKind = "investment"
+	// KindPartnership is a partner who brings work and no money and receives a
+	// share of the net. When the partner is a person, the company that pays
+	// holds back the INSS of the contribuinte individual and the IRRF of the
+	// monthly table from each payment.
+	KindPartnership ContractKind = "partnership"
+)
+
+// Valid reports whether the kind is one the package knows. The empty kind is
+// valid and means an investment.
+func (k ContractKind) Valid() bool {
+	return k == "" || k == KindInvestment || k == KindPartnership
+}
+
+// Or is the kind with the default applied: an empty one is an investment.
+func (k ContractKind) Or() ContractKind {
+	if k == "" {
+		return KindInvestment
+	}
+	return k
+}
+
+// IsPartnership reports whether the contract is a partnership.
+func (c Contract) IsPartnership() bool { return c.Kind.Or() == KindPartnership }
+
+// withholdsFor says whether what is paid under this contract to this investor
+// has the retention at source held back: a partnership with a person.
+func (c Contract) withholdsFor(owner *Investor) bool {
+	return c.IsPartnership() && owner != nil && owner.Kind == Person
+}
+
+// NextPayDay is the first day, from the one given on, that falls on the day of
+// the month a contract pays its partner, 1 to 28. A payDay outside that range
+// has none and answers the zero Day.
+func NextPayDay(payDay int, from Day) Day {
+	if payDay < 1 || payDay > 28 || from.IsZero() {
+		return ""
+	}
+	t := from.Time()
+	next := time.Date(t.Year(), t.Month(), payDay, 0, 0, 0, 0, time.UTC)
+	if next.Before(t) {
+		next = next.AddDate(0, 1, 0)
+	}
+	return Day(next.Format(DayLayout))
 }
 
 // ContractStatus is whether a contract version is the one in force.
@@ -257,6 +326,9 @@ func (r ContractResource) ToArray() map[string]any {
 		"share_bps":    r.c.ShareBps,
 		"billing_day":  r.c.BillingDay,
 		"all_products": bool(r.c.AllProducts),
+		"kind":         string(r.c.Kind.Or()),
+		"carry_loss":   bool(r.c.CarryLoss),
+		"pay_day":      r.c.PayDay,
 		"products":     products,
 		"status":       string(r.c.Status),
 		"file_name":    r.c.FileName,

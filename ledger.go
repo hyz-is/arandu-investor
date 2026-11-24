@@ -209,7 +209,38 @@ type Invoice struct {
 	CostRatioPPM int64 `db:"cost_ratio_ppm"`
 
 	ShareBps int64 `db:"share_bps"`
-	Amount   int64 `db:"amount"`
+
+	// Amount is what the investor is paid: their part of the net, less the
+	// retention at source when there is one. It is what is deposited in the
+	// wallet and what the withdrawal asks for. GrossPart is the part before the
+	// retention.
+	Amount int64 `db:"amount"`
+
+	// CarriedIn is the loss of earlier periods taken off this period's net
+	// before the share was applied, and CarriedOut is the loss left to take off
+	// the periods that follow. Both are zero for a contract that does not carry
+	// its losses.
+	CarriedIn  int64 `db:"carried_in"`
+	CarriedOut int64 `db:"carried_out"`
+
+	// The retention at source held from the part, when the contract and the
+	// investor ask for it. INSSBase is what the contribution was held over,
+	// IRRFBase the month's base of the income tax after the deductions (the
+	// sum of every payment of the month, see WithholdingLine), and the rates
+	// are in basis points. IRRFReduction is what Lei 15.270/2025 took off the
+	// tax. Dependents is the number the deduction counted, WithholdingTable the
+	// table of rates the retention was computed with, and WithholdingMonth the
+	// calendar month ("2026-11") whose payments the tax was computed over.
+	INSSBase         int64  `db:"inss_base"`
+	INSSRateBps      int64  `db:"inss_rate_bps"`
+	INSSAmount       int64  `db:"inss_amount"`
+	IRRFBase         int64  `db:"irrf_base"`
+	IRRFRateBps      int64  `db:"irrf_rate_bps"`
+	IRRFReduction    int64  `db:"irrf_reduction"`
+	IRRFAmount       int64  `db:"irrf_amount"`
+	Dependents       int    `db:"dependents"`
+	WithholdingTable string `db:"withholding_table"`
+	WithholdingMonth string `db:"withholding_month"`
 
 	Status InvoiceStatus `db:"status"`
 
@@ -244,9 +275,41 @@ const (
 	InvoiceNothingDue InvoiceStatus = "nothing_due"
 )
 
+// Withheld is what was held back from the investor's part: the contribution
+// and the income tax.
+func (i Invoice) Withheld() int64 { return i.INSSAmount + i.IRRFAmount }
+
+// GrossPart is the investor's part of the net before the retention at source:
+// what they are paid plus what was held back. An invoice with no retention has
+// the same Amount and GrossPart.
+func (i Invoice) GrossPart() int64 { return i.Amount + i.Withheld() }
+
 var invoiceTable = model.NewTable(model.TableSpec{
 	Name:      invoicesTable,
 	New:       func() model.Entity { return new(Invoice) },
+	ManualKey: true,
+})
+
+// SeparateProduct is a product kept apart: a contract or a cost that covers
+// "the whole application" does not cover it. It is what lets one application
+// carry the line of another partner without that partner's revenue, costs and
+// share leaking into the contracts that cover everything else. A contract or a
+// cost that names the product covers it all the same.
+type SeparateProduct struct {
+	model.Model
+
+	ID        string `db:"id"`
+	TenantID  string `db:"tenant_id"`
+	ProductID string `db:"product_id"`
+	CreatedBy string `db:"created_by"`
+
+	CreatedAt time.Time `db:"created_at"`
+	UpdatedAt time.Time `db:"updated_at"`
+}
+
+var separateProductTable = model.NewTable(model.TableSpec{
+	Name:      separateProductsTable,
+	New:       func() model.Entity { return new(SeparateProduct) },
 	ManualKey: true,
 })
 

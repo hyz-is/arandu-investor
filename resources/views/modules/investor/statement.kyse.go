@@ -63,7 +63,7 @@ func statementTable(data StatementData) components.DataTableProps {
 <section class="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
 	<header class="flex flex-wrap items-start justify-between gap-4">
 		<div>
-			<p class="text-muted-foreground text-xs font-medium uppercase tracking-wide">{{ .Labels.T("noun.contract") }} {{ .Contract.Number }} · v{{ .Contract.Version }} · {{ .Contract.Share }}</p>
+			<p class="text-muted-foreground text-xs font-medium uppercase tracking-wide">{{ .Labels.T("noun.contract") }} {{ .Contract.Number }} · v{{ .Contract.Version }} · {{ .Contract.Kind }} · {{ .Contract.Share }}</p>
 			<h1 class="mt-1 text-2xl font-semibold tracking-tight">{{ .Labels.T("screen.statement_title") }}</h1>
 			<p class="text-muted-foreground mt-1 max-w-prose text-sm">{{ .Labels.T("screen.statement_lead") }}</p>
 		</div>
@@ -95,6 +95,14 @@ func statementTable(data StatementData) components.DataTableProps {
 		<div class="card p-4"><dt class="text-muted-foreground text-xs">{{ .Labels.T("field.costs") }}</dt><dd class="mt-1 text-lg font-semibold tabular-nums">{{ .Costs }}</dd></div>
 		<div class="card p-4"><dt class="text-muted-foreground text-xs">{{ .Labels.T("field.net") }}</dt><dd class="mt-1 text-lg font-semibold tabular-nums">{{ .Net }}</dd></div>
 	</dl>
+
+	@if(.CarriedLoss != "")
+		<div class="card mt-6 p-4">
+			<p class="text-muted-foreground text-xs">{{ .Labels.T("screen.carried_loss") }}</p>
+			<p class="mt-1 text-lg font-semibold tabular-nums">{{ .CarriedLoss }}</p>
+			<p class="text-muted-foreground mt-1 text-xs">{{ .Labels.T("screen.carried_loss_note") }}</p>
+		</div>
+	@endif
 
 	<div class="mt-6">{!! components.DataTable(statementTable(.)) !!}</div>
 
