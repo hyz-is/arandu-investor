@@ -112,6 +112,8 @@ const (
 	costItemProductsTable = "investor_cost_item_products"
 	invoicesTable         = "investor_invoices"
 	invoiceEntriesTable   = "investor_invoice_entries"
+	// investorTransfersTable is the history of who each investor was.
+	investorTransfersTable = "investor_transfers"
 )
 
 // Column widths, declared once for the migrations and the validation, so a

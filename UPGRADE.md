@@ -1,5 +1,23 @@
 # Upgrade Guide
 
+## v0.9.0
+
+Run `aru migrate`: one migration creates `investor_transfers`. Nothing is
+removed and no address changes.
+
+`InvestorService.Transfer` and `Transfers` are new, behind the new action
+`InvestorsTransfer` (`investor.investors.transfer`). The admin role and the
+admin action open it, so an application whose arandu-permission group carries
+`investor.admin` needs nothing. An application that lists every action of this
+package in a test adds the new one. A transfer changes the registration only:
+the role or group the application gave the previous owner to open the
+investor's area is the application's to take away.
+
+## v0.8.1
+
+No migration and no code change. The registry's ordering by type and by status
+works, and an unknown ordering is a refused request.
+
 ## v0.8.0
 
 The investor's panel is a handful of pages and `dashboard` is only the summary,

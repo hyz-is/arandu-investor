@@ -180,7 +180,7 @@ Opening an action means writing the rule that opens it, in the package's
 ```
 
 What is not written there stays closed, including every action added later.
-There are six actions — `InvestorsManage`, `EntriesManage`, `CostsManage`,
+There are seven actions — `InvestorsManage`, `InvestorsTransfer`, `EntriesManage`, `CostsManage`,
 `DashboardView`, `ContractView`, `ReportsView` — and opening one opens exactly one.
 
 **Do not open it from the application.** There is no hook, no override and no

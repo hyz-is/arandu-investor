@@ -8,6 +8,30 @@ the versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 A published module version is immutable: Go serves it from the proxy forever, so
 a release is corrected by another release and never by moving a tag.
 
+## [0.9.0] - 2026-11-24
+
+### Added
+
+- `InvestorService.Transfer` passes an investor to another person: the login
+  user, the kind, the document, the names and the e-mail become the new
+  owner's, with the day it takes effect (`EffectiveOn`, never a day to come)
+  and a reason. The contracts, the entries, the invoices and the closings stay
+  with the registration. It needs the new action `InvestorsTransfer`
+  (`investor.investors.transfer`), which the admin role and the admin action
+  open.
+- The table `investor_transfers` (a migration, run by `aru migrate`) keeps the
+  registration as it was before each transfer, and `InvestorService.Transfers`
+  lists them by the day they took effect. The act is recorded in the activity log as
+  `investor.transferred`, with the owner before and the owner after, the
+  documents masked.
+- Run `aru migrate`: the migration `20261124_0001_create_investor_transfers`
+  creates `investor_transfers`.
+- The previous owner's payout accounts in arandu-wallet are disabled by the
+  transfer. A transfer is refused, with nothing changed, while the previous
+  owner's investor wallet holds money or one of their withdrawals is open, when
+  the new login user or document is another investor's, and when the day is
+  still to come.
+
 ## [0.8.1] - 2026-11-21
 
 ### Fixed

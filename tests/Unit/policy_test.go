@@ -37,6 +37,7 @@ import (
 // five of six would pass while the sixth was open.
 var everyAction = []security.Action{
 	investor.InvestorsManage,
+	investor.InvestorsTransfer,
 	investor.EntriesManage,
 	investor.CostsManage,
 	investor.DashboardView,
@@ -45,7 +46,7 @@ var everyAction = []security.Action{
 }
 
 // manageActions are the ones only the admin takes.
-var manageActions = []security.Action{investor.InvestorsManage, investor.EntriesManage, investor.CostsManage}
+var manageActions = []security.Action{investor.InvestorsManage, investor.InvestorsTransfer, investor.EntriesManage, investor.CostsManage}
 
 // readActions are the ones an investor takes about their own row.
 var readActions = []security.Action{investor.DashboardView, investor.ContractView, investor.ReportsView}
@@ -222,6 +223,12 @@ func TestTheServiceRefusesBeforeReachingTheModel(t *testing.T) {
 	}
 	if _, err := service.SetActive(ctx, signedIn(), "record-1", false); !errors.Is(err, security.ErrForbidden) {
 		t.Fatalf("SetActive reached the Model before the policy refusal: %v", err)
+	}
+	if _, err := service.Transfer(ctx, signedIn(), "record-1", investor.TransferRequest{UserID: "user-2"}); !errors.Is(err, security.ErrForbidden) {
+		t.Fatalf("Transfer reached the Model before the policy refusal: %v", err)
+	}
+	if _, err := service.Transfers(ctx, signedIn(), "record-1"); !errors.Is(err, security.ErrForbidden) {
+		t.Fatalf("Transfers reached the Model before the policy refusal: %v", err)
 	}
 }
 

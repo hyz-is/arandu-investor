@@ -22,6 +22,9 @@ const (
 	// EntriesManage is recording entries by hand, reversing them and closing a
 	// contract's period.
 	EntriesManage security.Action = "investor.entries.manage"
+	// InvestorsTransfer is passing an investor, with its contracts and its
+	// books, to another person.
+	InvestorsTransfer security.Action = "investor.investors.transfer"
 	// CostsManage is declaring the costs of the system.
 	CostsManage security.Action = "investor.costs.manage"
 	// DashboardView is reading an investor's statement, costs and projection.
@@ -107,7 +110,7 @@ func (InvestorPolicy) Can(ctx context.Context, s security.Subject, a security.Ac
 	// is refused to everybody until a rule names it.
 	if IsAdmin(s) {
 		switch a {
-		case InvestorsManage, EntriesManage, CostsManage, DashboardView, ContractView, ReportsView:
+		case InvestorsManage, InvestorsTransfer, EntriesManage, CostsManage, DashboardView, ContractView, ReportsView:
 			return nil
 		}
 	}

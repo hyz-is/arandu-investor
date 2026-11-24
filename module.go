@@ -1325,6 +1325,7 @@ func (m *Module) Migrations() []foundation.Migration {
 		createEntries{}, createCostItems{}, createCostItemProducts{},
 		createInvoices{}, createInvoiceEntries{},
 		widenInvestorTimePrecision,
+		createInvestorTransfers{},
 	}
 }
 
@@ -1652,4 +1653,44 @@ func (createInvoiceEntries) Up(ctx context.Context, conn migrations.Connection) 
 // Down drops the table.
 func (createInvoiceEntries) Down(ctx context.Context, conn migrations.Connection) error {
 	return conn.Schema().DropIfExists(ctx, invoiceEntriesTable)
+}
+
+var _ migrations.ReversibleMigration = createInvestorTransfers{}
+
+// createInvestorTransfers is the table of the changes of who an investor is.
+type createInvestorTransfers struct{ migrations.BaseMigration }
+
+// GetName is the migration's identity, and it carries the order.
+func (createInvestorTransfers) GetName() string { return "20261124_0001_create_investor_transfers" }
+
+// Up creates the table. The investor's own row holds the current owner, so
+// this one holds each owner before a change: the login user, the kind, the
+// document and the names, as they were.
+func (createInvestorTransfers) Up(ctx context.Context, conn migrations.Connection) error {
+	return conn.Schema().Create(ctx, investorTransfersTable, func(table *schema.Blueprint) {
+		table.String("id", maxIdentifierLen).Primary()
+		table.String("tenant_id", maxIdentifierLen)
+		table.String("investor_id", maxIdentifierLen)
+		table.String("from_user_id", maxIdentifierLen)
+		table.String("from_kind", maxShortLen)
+		table.String("from_document", maxDocumentLen)
+		table.String("from_name", maxNameLen)
+		table.String("from_legal_name", maxNameLen).Default("")
+		table.String("from_legal_representative", maxNameLen).Default("")
+		table.String("from_email", maxEmailLen)
+		table.String("to_user_id", maxIdentifierLen)
+		table.String("to_name", maxNameLen)
+		table.String("effective_on", len(DayLayout))
+		table.String("reason", maxTextLen)
+		table.String("created_by", maxIdentifierLen)
+		table.Timestamp("created_at")
+		table.Timestamp("updated_at")
+
+		table.Index([]string{"tenant_id", "investor_id", "created_at"}, "investor_transfers_investor_idx")
+	})
+}
+
+// Down drops the table.
+func (createInvestorTransfers) Down(ctx context.Context, conn migrations.Connection) error {
+	return conn.Schema().DropIfExists(ctx, investorTransfersTable)
 }

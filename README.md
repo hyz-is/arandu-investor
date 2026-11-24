@@ -100,7 +100,7 @@ Then, once, before the application serves:
 aru migrate
 ```
 
-The package owns eight tables, which is why `arandu.mod.toml` says
+The package owns nine tables, which is why `arandu.mod.toml` says
 `migrations = true`. arandu-wallet's own migrations run in the same step.
 
 ## Give people access
@@ -168,6 +168,36 @@ PIX outside the system, and records the end-to-end identifier with the receipt
 attached; or rejects it with a reason, and the invoice can be asked for again.
 The investor downloads the receipt from their panel ("Ver comprovante"). With
 `Config.Activity`, every one of these acts is in arandu-activitylog.
+
+## Pass an investor to another person
+
+An investor can be given away, sold or inherited: the registration keeps its
+contracts, its entries, its invoices and its closings, and a different person
+becomes its owner. The admin's code does it with one call:
+
+```go
+	record, err := investorModule.Service().Transfer(ctx, operator, investorID, investor.TransferRequest{
+		UserID:      newUser.ID,
+		Document:    "529.982.247-25",
+		Name:        "Ana Souza",
+		Email:       "ana@example.com",
+		EffectiveOn: "2026-11-24", // the day it counts from, never a day to come
+		Reason:      "gift to the investor's son",
+	})
+```
+
+The registration's login user, document, names and e-mail become the new
+owner's, and what they were is kept in a row of `investor_transfers`
+(`Service().Transfers` lists them by the day they took effect). The act is in
+arandu-activitylog with the owner before and the owner after, the documents
+masked. It needs `InvestorsTransfer`, which the admin role and action carry.
+
+The previous owner's payout accounts in arandu-wallet are disabled, so the new
+owner declares their own. The transfer is refused, and nothing changes, while
+the previous owner's investor wallet still holds money or one of their
+withdrawals is open: that money is theirs and is paid first. What the
+application grants the previous owner beside the registration, such as a role
+that opens the investor's area, is the application's to take away.
 
 ## Reports
 

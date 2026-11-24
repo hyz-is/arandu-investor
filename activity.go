@@ -17,6 +17,7 @@ const (
 	EventInvestorUpdated     = "investor.updated"
 	EventInvestorSuspended   = "investor.suspended"
 	EventInvestorReactivated = "investor.reactivated"
+	EventInvestorTransferred = "investor.transferred"
 	EventContractCreated     = "contract.created"
 	EventContractAmended     = "contract.amended"
 	EventEntryRecorded       = "entry.recorded"
